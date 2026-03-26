@@ -48,6 +48,15 @@ This storage convention supports the split policy documented in [docs/split-stra
 - split folders exist for `train`, `val`, and `test`
 - the repository is configured to keep `data/` out of version control
 
+## Verified sample files
+- RipVIS-004.mp4 opened successfully
+- RipVIS-011.mp4 opened successfully
+- RipVIS-126.mp4 opened successfully
+- RipVIS-001.mp4 opened successfully
+- RipVIS-024.mp4 opened successfully
+- RipVIS-002.mp4 opened successfully
+- Related annotation/metadata files located successfully
+
 ## Team Access
 
 Team members can access the dataset by:
