@@ -26,8 +26,8 @@ The RipVIS split groups complete videos into one of three partitions: train, val
 
 For SurfWatch, this implies that:
 - training is performed only on videos assigned to the training split
-- validation is used for model selection and tuning
-- test videos are kept completely unseen until final evaluation
+- validation is used for model selection, tuning, and quantitative evaluation
+- test videos are kept completely unseen during model development
 - no frames from a test or validation video should be reused in training, even if extracted separately later
 
 The split is therefore not just a frame count division, but a full video-partitioning strategy designed to preserve temporal independence between training and evaluation data.
@@ -39,7 +39,16 @@ In other words, the video is the atomic unit of splitting, and every frame or an
 This means:
 - all frames from a given video remain in the same split
 - annotations and masks follow the source video split
-- the test split remains untouched until final evaluation
+- the test split remains untouched during training and tuning
+## Annotation availability note
+During implementation, SurfWatch confirmed that the RipVIS training and validation splits provide COCO-style instance annotations that can be converted into binary semantic segmentation masks. However, the public test split is distributed as `test_without_annotations.json`, which provides image metadata without public ground-truth annotations for local mask generation.
+
+This means that, for SurfWatch:
+- the **train split** is used for model fitting
+- the **validation split** is used for checkpoint selection, tuning, and quantitative evaluation
+- the **test split** is used only for qualitative inference on unseen videos unless an external benchmark evaluation method is provided
+
+As a result, local metrics such as IoU, Dice, precision, and recall are computed on the validation split rather than the public test split.
 
 ## Leakage risks identified
 1. Frame leakage  
@@ -62,3 +71,8 @@ This means:
 RipVIS is released as an instance segmentation dataset. For SurfWatch, instance masks will be merged into a single semantic “rip” class mask while preserving the original video-level split.
 
 When implementing the data pipeline, we should preserve the original RipVIS split folders or metadata identifiers and ensure that any preprocessing, mask conversion, or frame extraction step keeps outputs attached to the same source-video partition.
+
+For semantic mask conversion specifically:
+- `train/coco_annotations/train.json` is used to generate training masks
+- `val/coco_annotations/val.json` is used to generate validation masks
+- the public test split is not converted into ground-truth semantic masks because public annotations are not provided in the same format
