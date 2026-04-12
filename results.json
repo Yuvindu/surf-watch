@@ -1,0 +1,18 @@
+{
+  "input": "RipVIS-016_full.mp4",
+  "output": "RipVIS-016_all_frames_stabilised.mp4",
+  "resolution": "640\u00d7360",
+  "fps": 30.0,
+  "total_frames": 941,
+  "approach": "ORB feature matching + RANSAC homography + trajectory smoothing",
+  "orb_n_features": 2000,
+  "smoothing_radius_frames": 15,
+  "avg_good_matches_per_frame": 1468.9,
+  "avg_inliers_per_frame": 1464.8,
+  "transform_success_rate_pct": 100.0,
+  "failed_transforms": 0,
+  "mean_correction_tx_px": 0.17,
+  "mean_correction_ty_px": 0.09,
+  "mean_correction_angle_deg": 0.012,
+  "processing_time_s": 118.6
+}
