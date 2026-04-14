@@ -15,19 +15,36 @@ def compute_confusion(preds: torch.Tensor, targets: torch.Tensor, num_classes: i
     return conf
 
 
-def iou_score(confusion: torch.Tensor):
+def _tp_fp_fn(confusion: torch.Tensor):
     tp = torch.diag(confusion).float()
     fp = confusion.sum(dim=0).float() - tp
     fn = confusion.sum(dim=1).float() - tp
+    return tp, fp, fn
+
+
+def iou_score(confusion: torch.Tensor):
+    tp, fp, fn = _tp_fp_fn(confusion)
     denom = tp + fp + fn
     iou = torch.where(denom > 0, tp / denom, torch.zeros_like(tp))
     return iou.mean().item(), iou
 
 
 def dice_score(confusion: torch.Tensor):
-    tp = torch.diag(confusion).float()
-    fp = confusion.sum(dim=0).float() - tp
-    fn = confusion.sum(dim=1).float() - tp
+    tp, fp, fn = _tp_fp_fn(confusion)
     denom = 2 * tp + fp + fn
     dice = torch.where(denom > 0, (2 * tp) / denom, torch.zeros_like(tp))
     return dice.mean().item(), dice
+
+
+def precision_score(confusion: torch.Tensor):
+    tp, fp, _ = _tp_fp_fn(confusion)
+    denom = tp + fp
+    precision = torch.where(denom > 0, tp / denom, torch.zeros_like(tp))
+    return precision.mean().item(), precision
+
+
+def recall_score(confusion: torch.Tensor):
+    tp, _, fn = _tp_fp_fn(confusion)
+    denom = tp + fn
+    recall = torch.where(denom > 0, tp / denom, torch.zeros_like(tp))
+    return recall.mean().item(), recall

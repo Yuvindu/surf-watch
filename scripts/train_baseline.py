@@ -84,7 +84,9 @@ def main():
             f"train_loss={train_loss:.4f} "
             f"val_loss={val_metrics['val_loss']:.4f} "
             f"val_iou={val_metrics['val_iou']:.4f} "
-            f"val_dice={val_metrics['val_dice']:.4f}"
+            f"val_dice={val_metrics['val_dice']:.4f} "
+            f"val_precision={val_metrics['val_precision']:.4f} "
+            f"val_recall={val_metrics['val_recall']:.4f}"
         )
 
         if val_metrics["val_iou"] > best_val_iou:
