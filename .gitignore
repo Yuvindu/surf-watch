@@ -1,3 +1,9 @@
+# Node / Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/coverage/
+
 # OS / editor
 .DS_Store
 Thumbs.db

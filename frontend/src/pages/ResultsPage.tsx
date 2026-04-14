@@ -1,0 +1,149 @@
+import { useContext } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import Box from '@mui/material/Box';
+import Typography from '@mui/material/Typography';
+import Button from '@mui/material/Button';
+import Paper from '@mui/material/Paper';
+import Grid from '@mui/material/Grid';
+import Divider from '@mui/material/Divider';
+import Chip from '@mui/material/Chip';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import WaterDropIcon from '@mui/icons-material/WaterDrop';
+import AccessTimeIcon from '@mui/icons-material/AccessTime';
+import LayersIcon from '@mui/icons-material/Layers';
+import { AnalysisContext } from '../context/AnalysisContext';
+import ConfidenceGauge from '../components/ConfidenceGauge';
+import HeatmapOverlay from '../components/HeatmapOverlay';
+import VideoPlayer from '../components/VideoPlayer';
+import { formatDuration, formatDate } from '../utils/helpers';
+
+export default function ResultsPage() {
+  const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const { history } = useContext(AnalysisContext);
+  const analysisCase = history.find(c => c.id === id);
+
+  if (!analysisCase) {
+    return (
+      <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', py: 12, px: 2 }}>
+        <Typography variant="h6" color="text.secondary" mb={2}>Result not found.</Typography>
+        <Button onClick={() => navigate('/history')} startIcon={<ArrowBackIcon />}>Back to History</Button>
+      </Box>
+    );
+  }
+
+  const { upload, prediction } = analysisCase;
+  if (!prediction) {
+    return (
+      <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', py: 12, px: 2 }}>
+        <Typography variant="h6" color="text.secondary" mb={2}>No prediction data available.</Typography>
+        <Button onClick={() => navigate(-1)} startIcon={<ArrowBackIcon />}>Go back</Button>
+      </Box>
+    );
+  }
+
+  const frame0 = prediction.frames[0];
+  const totalRegions = frame0?.regions.length ?? 0;
+  const avgCoverage = frame0
+    ? frame0.regions.reduce((s, r) => s + r.pixelCoverage, 0) / Math.max(frame0.regions.length, 1)
+    : 0;
+
+  return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', px: { xs: 2, sm: 3 }, py: { xs: 4, md: 6 } }}>
+      <Box sx={{ width: '100%', maxWidth: 960 }}>
+        <Button
+          startIcon={<ArrowBackIcon />}
+          onClick={() => navigate(-1)}
+          sx={{ mb: 2, color: 'text.secondary', px: 0 }}
+        >
+          Back
+        </Button>
+
+        <Typography
+          variant="h4"
+          fontWeight={800}
+          mb={0.5}
+          sx={{ fontSize: { xs: '1.75rem', md: '2.125rem' } }}
+        >
+          Results
+        </Typography>
+        <Typography
+          variant="body2"
+          color="text.secondary"
+          mb={3}
+          sx={{ wordBreak: 'break-all' }}
+        >
+          {upload.file.name} &nbsp;·&nbsp; {formatDate(analysisCase.createdAt)}
+        </Typography>
+
+        <Grid container spacing={3}>
+          {/* Media + overlay */}
+          <Grid item xs={12} md={7}>
+            <Paper sx={{ p: { xs: 1.5, sm: 2 }, bgcolor: 'background.paper' }}>
+              {upload.fileType === 'video' ? (
+                <VideoPlayer previewUrl={upload.previewUrl} prediction={prediction} />
+              ) : (
+                <HeatmapOverlay
+                  previewUrl={upload.previewUrl}
+                  frame={frame0}
+                  isVideo={false}
+                />
+              )}
+            </Paper>
+          </Grid>
+
+          {/* Stats panel */}
+          <Grid item xs={12} md={5}>
+            <Paper sx={{ p: { xs: 2.5, sm: 3 }, bgcolor: 'background.paper' }}>
+              <Box sx={{ display: 'flex', justifyContent: 'center', mb: 3 }}>
+                <ConfidenceGauge value={prediction.averageConfidence} size={110} />
+              </Box>
+              <Divider sx={{ mb: 2 }} />
+
+              {[
+                {
+                  icon: <WaterDropIcon fontSize="small" sx={{ color: 'text.secondary' }} />,
+                  label: 'Rip regions detected',
+                  value: totalRegions.toString(),
+                },
+                {
+                  icon: <LayersIcon fontSize="small" sx={{ color: 'text.secondary' }} />,
+                  label: 'Avg pixel coverage',
+                  value: `${avgCoverage.toFixed(1)}%`,
+                },
+                {
+                  icon: <AccessTimeIcon fontSize="small" sx={{ color: 'text.secondary' }} />,
+                  label: 'Processing time',
+                  value: formatDuration(prediction.processingTimeMs),
+                },
+              ].map(stat => (
+                <Box key={stat.label} sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.5 }}>
+                  {stat.icon}
+                  <Box>
+                    <Typography variant="caption" color="text.secondary">{stat.label}</Typography>
+                    <Typography variant="subtitle2" fontWeight={700}>{stat.value}</Typography>
+                  </Box>
+                </Box>
+              ))}
+
+              <Divider sx={{ my: 2 }} />
+              <Typography variant="caption" color="text.secondary" display="block" mb={1}>
+                Frames analysed
+              </Typography>
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                {prediction.frames.map((_f, i) => (
+                  <Chip
+                    key={i}
+                    label={`F${i}`}
+                    size="small"
+                    sx={{ fontSize: '0.6rem', height: 18 }}
+                  />
+                ))}
+              </Box>
+            </Paper>
+          </Grid>
+        </Grid>
+      </Box>
+    </Box>
+  );
+}
