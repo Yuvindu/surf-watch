@@ -4,7 +4,13 @@ import torch
 from PIL import Image, ImageDraw
 import numpy as np
 
-from src.training.metrics import compute_confusion, iou_score, dice_score
+from src.training.metrics import (
+    compute_confusion,
+    iou_score,
+    dice_score,
+    precision_score,
+    recall_score,
+)
 from src.training.utils import save_checkpoint
 
 
@@ -61,11 +67,15 @@ def validate(model, loader, loss_fn, device):
 
     mean_iou, _ = iou_score(confusion)
     mean_dice, _ = dice_score(confusion)
+    mean_precision, _ = precision_score(confusion)
+    mean_recall, _ = recall_score(confusion)
 
     return {
         "val_loss": running_loss / max(len(loader), 1),
         "val_iou": mean_iou,
         "val_dice": mean_dice,
+        "val_precision": mean_precision,
+        "val_recall": mean_recall,
     }
 
 
