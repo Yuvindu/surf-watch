@@ -1,9 +1,8 @@
 import os
 
 import torch
-from PIL import Image
+from PIL import Image, ImageDraw
 import numpy as np
-from torchvision.transforms import functional as TF
 
 from src.training.metrics import compute_confusion, iou_score, dice_score
 from src.training.utils import save_checkpoint
@@ -81,7 +80,7 @@ def save_sample_predictions(model, loader, device, output_dir, max_samples=4):
             images, masks, filenames = batch
         else:
             images, masks = batch
-            filenames = [f"sample_{i}.png" for i in range(images.shape[0])]
+            filenames = [f"sample_{i}.jpg" for i in range(images.shape[0])]
 
         images = images.to(device)
         outputs = model(pixel_values=images).logits
@@ -92,14 +91,43 @@ def save_sample_predictions(model, loader, device, output_dir, max_samples=4):
             align_corners=False,
         )
         preds = torch.argmax(outputs, dim=1).cpu()
+        images_cpu = images.cpu()
+        masks_cpu = masks.cpu()
 
         for i in range(images.shape[0]):
             if saved >= max_samples:
                 return
 
-            pred = (preds[i].numpy() * 255).astype(np.uint8)
-            out_path = os.path.join(output_dir, f"pred_{filenames[i].replace('.jpg', '.png')}")
-            Image.fromarray(pred).save(out_path)
+            image_np = (images_cpu[i].permute(1, 2, 0).numpy() * 255).clip(0, 255).astype(np.uint8)
+            gt_np = (masks_cpu[i].numpy() * 255).astype(np.uint8)
+            pred_np = (preds[i].numpy() * 255).astype(np.uint8)
+
+            gt_rgb = np.stack([gt_np] * 3, axis=-1)
+            pred_rgb = np.stack([pred_np] * 3, axis=-1)
+
+            comparison = np.concatenate([image_np, gt_rgb, pred_rgb], axis=1)
+            comparison_img = Image.fromarray(comparison)
+
+            label_height = 30
+            labeled_img = Image.new(
+                "RGB",
+                (comparison_img.width, comparison_img.height + label_height),
+                color=(0, 0, 0),
+            )
+            labeled_img.paste(comparison_img, (0, label_height))
+
+            draw = ImageDraw.Draw(labeled_img)
+            panel_width = image_np.shape[1]
+            labels = ["Input", "Ground Truth", "Prediction"]
+
+            for panel_idx, label in enumerate(labels):
+                x = panel_idx * panel_width + 10
+                y = 8
+                draw.text((x, y), label, fill=(255, 255, 255))
+
+            base_name = os.path.splitext(filenames[i])[0]
+            out_path = os.path.join(output_dir, f"compare_{base_name}.png")
+            labeled_img.save(out_path)
             saved += 1
 
 
