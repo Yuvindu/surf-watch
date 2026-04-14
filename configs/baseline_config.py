@@ -1,10 +1,11 @@
+import os
 from dataclasses import dataclass
 
 
 @dataclass
 class BaselineConfig:
-    ripvis_root: str = "../RipVIS"
-    processed_root: str = "data/processed"
+    ripvis_root: str = os.getenv("RIPVIS_ROOT", "../RipVIS")
+    processed_root: str = os.getenv("PROCESSED_ROOT", "data/processed")
 
     train_split: str = "train"
     val_split: str = "val"
@@ -16,13 +17,13 @@ class BaselineConfig:
     num_classes: int = 2
     learning_rate: float = 1e-4
     weight_decay: float = 1e-4
-    num_epochs: int = 3
+    num_epochs: int = 1
 
-    train_subset_size: int = 1000
-    val_subset_size: int = 200
+    train_subset_size: int = 100
+    val_subset_size: int = 20
 
     checkpoint_dir: str = "checkpoints"
-    output_dir: str = "outputs/predictions/baseline_run_02"
+    output_dir: str = "outputs/predictions/visualisation_utility_test_run"
 
     pretrained_model_name: str = "nvidia/segformer-b0-finetuned-ade-512-512"
     save_best_only: bool = True
