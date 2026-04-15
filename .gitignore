@@ -32,7 +32,9 @@ dist/
 
 # Model outputs / checkpoints
 checkpoints/
-models/
+/models/
+!src/models/
+!src/models/**
 outputs/
 runs/
 results/
