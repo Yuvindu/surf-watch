@@ -9,7 +9,12 @@ sys.path.append(str(Path(__file__).resolve().parents[1]))
 from configs.baseline_config import BaselineConfig
 from src.data.ripvis_dataset import RipVISSemanticDataset
 from src.models.segformer_baseline import build_segformer_model
-from src.training.engine import train_one_epoch, validate, save_sample_predictions, save_best_model
+from src.training.engine import (
+    save_best_model,
+    save_sample_predictions,
+    train_one_epoch,
+    validate,
+)
 from src.training.losses import get_loss_fn
 from src.training.utils import get_device, set_seed
 
@@ -18,6 +23,12 @@ def main():
     config = BaselineConfig()
     set_seed(config.seed)
     device = get_device()
+
+    print(f"Using device: {device}")
+    print(f"Train split: {config.train_split}, Val split: {config.val_split}")
+    print(f"Batch size: {config.batch_size}, Epochs: {config.num_epochs}")
+    print(f"RIPVIS root: {config.ripvis_root}")
+    print(f"Processed root: {config.processed_root}")
 
     train_dataset = RipVISSemanticDataset(
         ripvis_root=config.ripvis_root,
@@ -52,6 +63,8 @@ def main():
         batch_size=config.batch_size,
         shuffle=True,
         num_workers=config.num_workers,
+        pin_memory=device.type == "cuda",
+        persistent_workers=config.num_workers > 0,
     )
 
     val_loader = DataLoader(
@@ -59,6 +72,8 @@ def main():
         batch_size=config.batch_size,
         shuffle=False,
         num_workers=config.num_workers,
+        pin_memory=device.type == "cuda",
+        persistent_workers=config.num_workers > 0,
     )
 
     model = build_segformer_model(
@@ -74,6 +89,8 @@ def main():
     )
 
     best_val_iou = -1.0
+    best_checkpoint_path = Path(config.checkpoint_dir) / "best_model.pt"
+    last_checkpoint_path = Path(config.checkpoint_dir) / "last_model.pt"
 
     for epoch in range(config.num_epochs):
         train_loss = train_one_epoch(model, train_loader, optimizer, loss_fn, device)
@@ -98,6 +115,23 @@ def main():
                 metrics=val_metrics,
                 checkpoint_dir=config.checkpoint_dir,
             )
+        save_best_model(
+            model=model,
+            optimizer=optimizer,
+            epoch=epoch + 1,
+            metrics=val_metrics,
+            checkpoint_dir=config.checkpoint_dir,
+            filename="last_model.pt",
+        )
+
+    if best_checkpoint_path.exists():
+        checkpoint = torch.load(best_checkpoint_path, map_location=device)
+        model.load_state_dict(checkpoint["model_state_dict"])
+        print(f"Loaded best checkpoint from: {best_checkpoint_path}")
+    elif last_checkpoint_path.exists():
+        checkpoint = torch.load(last_checkpoint_path, map_location=device)
+        model.load_state_dict(checkpoint["model_state_dict"])
+        print(f"Best checkpoint not found. Loaded last checkpoint from: {last_checkpoint_path}")
 
     save_sample_predictions(
         model=model,
