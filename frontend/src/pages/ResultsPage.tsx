@@ -32,8 +32,20 @@ export default function ResultsPage() {
     );
   }
 
-  const { upload, prediction } = analysisCase;
-  if (!prediction) {
+  const { upload, prediction, overlayUrl, confidenceScore, summaryLabel, caseName } = analysisCase;
+
+  // Use backend-provided confidence if available, otherwise fall back to mock prediction
+  const displayConfidence = confidenceScore ?? prediction?.averageConfidence ?? 0;
+  const displayName = caseName ?? upload.file.name;
+
+  // Backend pre-renders overlay; only compute frame stats when using local mock data
+  const frame0 = prediction?.frames[0] ?? null;
+  const totalRegions = frame0?.regions.length ?? 0;
+  const avgCoverage = frame0
+    ? frame0.regions.reduce((s, r) => s + r.pixelCoverage, 0) / Math.max(frame0.regions.length, 1)
+    : 0;
+
+  if (!overlayUrl && !prediction) {
     return (
       <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', py: 12, px: 2 }}>
         <Typography variant="h6" color="text.secondary" mb={2}>No prediction data available.</Typography>
@@ -41,12 +53,6 @@ export default function ResultsPage() {
       </Box>
     );
   }
-
-  const frame0 = prediction.frames[0];
-  const totalRegions = frame0?.regions.length ?? 0;
-  const avgCoverage = frame0
-    ? frame0.regions.reduce((s, r) => s + r.pixelCoverage, 0) / Math.max(frame0.regions.length, 1)
-    : 0;
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', px: { xs: 2, sm: 3 }, py: { xs: 4, md: 6 } }}>
@@ -73,20 +79,33 @@ export default function ResultsPage() {
           mb={3}
           sx={{ wordBreak: 'break-all' }}
         >
-          {upload.file.name} &nbsp;·&nbsp; {formatDate(analysisCase.createdAt)}
+          {displayName} &nbsp;·&nbsp; {formatDate(analysisCase.createdAt)}
         </Typography>
 
         <Grid container spacing={3}>
           {/* Media + overlay */}
           <Grid item xs={12} md={7}>
             <Paper sx={{ p: { xs: 1.5, sm: 2 }, bgcolor: 'background.paper' }}>
-              {upload.fileType === 'video' ? (
+              {/* If the backend provided a pre-rendered overlay video, show it directly */}
+              {overlayUrl ? (
+                <video
+                  src={overlayUrl}
+                  controls
+                  style={{ width: '100%', borderRadius: 4, display: 'block' }}
+                />
+              ) : upload.fileType === 'video' && prediction ? (
                 <VideoPlayer previewUrl={upload.previewUrl} prediction={prediction} />
-              ) : (
+              ) : frame0 ? (
                 <HeatmapOverlay
                   previewUrl={upload.previewUrl}
                   frame={frame0}
                   isVideo={false}
+                />
+              ) : (
+                <video
+                  src={upload.previewUrl}
+                  controls
+                  style={{ width: '100%', borderRadius: 4, display: 'block' }}
                 />
               )}
             </Paper>
@@ -96,11 +115,23 @@ export default function ResultsPage() {
           <Grid item xs={12} md={5}>
             <Paper sx={{ p: { xs: 2.5, sm: 3 }, bgcolor: 'background.paper' }}>
               <Box sx={{ display: 'flex', justifyContent: 'center', mb: 3 }}>
-                <ConfidenceGauge value={prediction.averageConfidence} size={110} />
+                <ConfidenceGauge value={displayConfidence} size={110} />
               </Box>
               <Divider sx={{ mb: 2 }} />
 
-              {[
+              {/* summaryLabel from backend */}
+              {summaryLabel && (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.5 }}>
+                  <WaterDropIcon fontSize="small" sx={{ color: 'text.secondary' }} />
+                  <Box>
+                    <Typography variant="caption" color="text.secondary">Detection summary</Typography>
+                    <Typography variant="subtitle2" fontWeight={700}>{summaryLabel}</Typography>
+                  </Box>
+                </Box>
+              )}
+
+              {/* Frame-level stats — only available with local mock data */}
+              {prediction && [
                 {
                   icon: <WaterDropIcon fontSize="small" sx={{ color: 'text.secondary' }} />,
                   label: 'Rip regions detected',
@@ -126,20 +157,24 @@ export default function ResultsPage() {
                 </Box>
               ))}
 
-              <Divider sx={{ my: 2 }} />
-              <Typography variant="caption" color="text.secondary" display="block" mb={1}>
-                Frames analysed
-              </Typography>
-              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                {prediction.frames.map((_f, i) => (
-                  <Chip
-                    key={i}
-                    label={`F${i}`}
-                    size="small"
-                    sx={{ fontSize: '0.6rem', height: 18 }}
-                  />
-                ))}
-              </Box>
+              {prediction && (
+                <>
+                  <Divider sx={{ my: 2 }} />
+                  <Typography variant="caption" color="text.secondary" display="block" mb={1}>
+                    Frames analysed
+                  </Typography>
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                    {prediction.frames.map((_f, i) => (
+                      <Chip
+                        key={i}
+                        label={`F${i}`}
+                        size="small"
+                        sx={{ fontSize: '0.6rem', height: 18 }}
+                      />
+                    ))}
+                  </Box>
+                </>
+              )}
             </Paper>
           </Grid>
         </Grid>

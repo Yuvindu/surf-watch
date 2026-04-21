@@ -16,15 +16,18 @@ interface ResultCardProps {
 
 export default function ResultCard({ analysisCase }: ResultCardProps) {
   const navigate = useNavigate();
-  const conf = analysisCase.prediction?.averageConfidence ?? 0;
+  // Prefer backend's flat confidenceScore; fall back to nested mock value
+  const conf = analysisCase.confidenceScore ?? analysisCase.prediction?.averageConfidence ?? 0;
+  const displayName = analysisCase.caseName ?? analysisCase.upload.file.name;
+  const hasResult = analysisCase.confidenceScore != null || analysisCase.prediction != null;
 
   return (
     <Card>
       <CardActionArea onClick={() => navigate(`/results/${analysisCase.id}`)}>
-        {/* Thumbnail */}
+        {/* Thumbnail — prefer overlay preview from backend, fall back to local upload */}
         <Box sx={{ height: 140, bgcolor: 'action.hover', position: 'relative', overflow: 'hidden' }}>
-          {analysisCase.upload.previewUrl ? (
-            analysisCase.upload.fileType === 'image' ? (
+          {(analysisCase.overlayUrl ?? analysisCase.upload.previewUrl) ? (
+            analysisCase.upload.fileType === 'image' && !analysisCase.overlayUrl ? (
               <img
                 src={analysisCase.upload.previewUrl}
                 alt="thumbnail"
@@ -32,7 +35,7 @@ export default function ResultCard({ analysisCase }: ResultCardProps) {
               />
             ) : (
               <video
-                src={analysisCase.upload.previewUrl}
+                src={analysisCase.overlayUrl ?? analysisCase.upload.previewUrl}
                 style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                 muted
               />
@@ -59,7 +62,7 @@ export default function ResultCard({ analysisCase }: ResultCardProps) {
 
         <CardContent sx={{ pb: '12px !important' }}>
           <Typography variant="body2" fontWeight={600} noWrap>
-            {analysisCase.upload.file.name}
+            {displayName}
           </Typography>
           <Typography variant="caption" color="text.secondary">
             {formatDate(analysisCase.createdAt)}
@@ -72,7 +75,7 @@ export default function ResultCard({ analysisCase }: ResultCardProps) {
               variant="outlined"
               sx={{ fontSize: '0.65rem', height: 20 }}
             />
-            {analysisCase.prediction && (
+            {hasResult && (
               <Chip
                 label={`${Math.round(conf * 100)}% · ${confidenceLabel(conf)}`}
                 size="small"
