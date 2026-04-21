@@ -38,7 +38,7 @@ dist/
 
 # Model outputs / checkpoints
 checkpoints/
-models/
+
 outputs/
 runs/
 results/
