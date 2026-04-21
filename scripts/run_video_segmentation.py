@@ -33,7 +33,7 @@ def preprocess_frame(frame: np.ndarray, image_size: tuple[int, int]) -> torch.Te
 
 
 @torch.no_grad()
-def predict_mask(
+def predict_probability_map(
     model,
     frame: np.ndarray,
     device: torch.device,
@@ -49,13 +49,26 @@ def predict_mask(
         align_corners=False,
     )
 
-    pred = torch.argmax(logits, dim=1).squeeze(0).cpu().numpy().astype(np.uint8)
-    pred_resized = cv2.resize(
-        pred,
+    probs = torch.softmax(logits, dim=1)
+    rip_prob = probs[:, 1, :, :].squeeze(0).cpu().numpy().astype(np.float32)
+    rip_prob_resized = cv2.resize(
+        rip_prob,
         (frame.shape[1], frame.shape[0]),
-        interpolation=cv2.INTER_NEAREST,
+        interpolation=cv2.INTER_LINEAR,
     )
-    return pred_resized
+    return rip_prob_resized
+
+
+@torch.no_grad()
+def predict_mask(
+    model,
+    frame: np.ndarray,
+    device: torch.device,
+    image_size: tuple[int, int],
+    threshold: float = 0.5,
+) -> np.ndarray:
+    prob_map = predict_probability_map(model, frame, device, image_size)
+    return (prob_map >= threshold).astype(np.uint8)
 
 
 def make_overlay(frame: np.ndarray, mask: np.ndarray, alpha: float = 0.35) -> np.ndarray:
@@ -72,6 +85,7 @@ def main():
     parser.add_argument("--checkpoint", required=True, help="Path to trained checkpoint")
     parser.add_argument("--output-overlay", required=True, help="Path to output overlay video")
     parser.add_argument("--output-mask", required=True, help="Path to output mask video")
+    parser.add_argument("--output-prob", required=True, help="Path to output probability video")
     args = parser.parse_args()
 
     config = BaselineConfig()
@@ -82,6 +96,7 @@ def main():
 
     Path(args.output_overlay).parent.mkdir(parents=True, exist_ok=True)
     Path(args.output_mask).parent.mkdir(parents=True, exist_ok=True)
+    Path(args.output_prob).parent.mkdir(parents=True, exist_ok=True)
 
     model = load_model(args.checkpoint, device, config)
 
@@ -107,6 +122,13 @@ def main():
         (width, height),
         isColor=False,
     )
+    prob_writer = cv2.VideoWriter(
+        args.output_prob,
+        cv2.VideoWriter_fourcc(*"mp4v"),
+        fps,
+        (width, height),
+        isColor=False,
+    )
 
     frame_idx = 0
     while True:
@@ -114,12 +136,15 @@ def main():
         if not ret:
             break
 
-        mask = predict_mask(model, frame, device, config.image_size)
+        prob_map = predict_probability_map(model, frame, device, config.image_size)
+        mask = (prob_map >= 0.5).astype(np.uint8)
         overlay = make_overlay(frame, mask)
         mask_frame = (mask * 255).astype(np.uint8)
+        prob_frame = np.clip(prob_map * 255.0, 0, 255).astype(np.uint8)
 
         overlay_writer.write(overlay)
         mask_writer.write(mask_frame)
+        prob_writer.write(prob_frame)
 
         frame_idx += 1
         if frame_idx % 50 == 0 or frame_idx == total:
@@ -128,9 +153,11 @@ def main():
     cap.release()
     overlay_writer.release()
     mask_writer.release()
+    prob_writer.release()
 
     print(f"Saved overlay video to: {args.output_overlay}")
     print(f"Saved mask video to: {args.output_mask}")
+    print(f"Saved probability video to: {args.output_prob}")
 
 
 if __name__ == "__main__":
