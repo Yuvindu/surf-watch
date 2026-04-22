@@ -9,6 +9,7 @@ The goal of SurfWatch is to support rip-current detection from video in a way th
 - preparing a reproducible dataset pipeline
 - converting RipVIS instance masks into a single semantic `rip` class
 - training and validating baseline segmentation models
+- extending the baseline into a motion-aware MARSP pipeline
 - evaluating only on held-out videos
 - documenting decisions, risks, and assumptions clearly
 
@@ -38,6 +39,10 @@ The repo currently records a few key decisions that shape the project:
 - SurfWatch is the project name
 - delivery follows 1-week Scrum sprints
 - the official RipVIS split is preserved at the video level for all experiments
+- RipVIS instance annotations are converted into binary semantic segmentation masks for SurfWatch
+- local quantitative evaluation uses the validation split because the public test split does not include local labels
+- baseline training uses SegFormer for binary rip-current segmentation
+- MARSP work extends the baseline with motion compensation and temporal aggregation
 
 See [docs/decision-log.md](/Users/rashmikecaldera/Developer/curtin/CSP/surfwatch/docs/decision-log.md) for the running decision history.
 
@@ -59,19 +64,164 @@ See [docs/risk-register.md](/Users/rashmikecaldera/Developer/curtin/CSP/surfwatc
 The project is informed by background review material on:
 
 - RipVIS as the core dataset and benchmark context
-- Rip-current detection work relevant to mobile or deployable use cases
+- rip-current detection work relevant to mobile or deployable use cases
+- motion-aware processing considerations for video-based prediction stability
 
 Supporting review documents are stored here:
 
 - [docs/lit-review/ripvis-lit-review.pdf](/Users/rashmikecaldera/Developer/curtin/CSP/surfwatch/docs/lit-review/ripvis-lit-review.pdf)
 - [docs/lit-review/RipFinder_mobile_lit-Review.pdf](/Users/rashmikecaldera/Developer/curtin/CSP/surfwatch/docs/lit-review/RipFinder_mobile_lit-Review.pdf)
 
-## Repository Docs
+## Repository Structure
 
-- [docs/split-strategy.md](/Users/rashmikecaldera/Developer/curtin/CSP/surfwatch/docs/split-strategy.md): dataset split policy and leakage controls
-- [docs/decision-log.md](/Users/rashmikecaldera/Developer/curtin/CSP/surfwatch/docs/decision-log.md): important project decisions
-- [docs/risk-register.md](/Users/rashmikecaldera/Developer/curtin/CSP/surfwatch/docs/risk-register.md): tracked delivery and technical risks
+Key project areas currently include:
+
+- `configs/`: training configuration
+- `scripts/`: dataset conversion, training, inference, motion compensation, temporal aggregation, and MARSP pipeline runners
+- `src/data/`: dataset loading
+- `src/models/`: baseline model definition
+- `src/preprocessing/`: motion compensation logic
+- `src/postprocessing/`: temporal aggregation logic
+- `src/training/`: training loops, metrics, losses, and utilities
+- `docs/`: decision log, risk register, split strategy, and experiment notes
+
+## Setup
+
+Create and activate a virtual environment:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+Install dependencies:
+
+```bash
+pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+## Dataset Layout
+
+The default local setup expects the RipVIS dataset as a sibling directory to this repository:
+
+```text
+../RipVIS/
+```
+
+If using a different location, set environment variables before running scripts:
+
+```bash
+export RIPVIS_ROOT=/path/to/RipVIS
+export PROCESSED_ROOT=/path/to/surfwatch/data/processed
+```
+
+Further detail for cloud use is documented in [docs/cloud-training-setup.md](/Users/rashmikecaldera/Developer/curtin/CSP/surfwatch/docs/cloud-training-setup.md).
+
+## Preparing Semantic Segmentation Masks
+
+Convert RipVIS instance annotations into SurfWatch semantic masks:
+
+```bash
+python scripts/convert_ripvis_to_semantic.py --split train
+python scripts/convert_ripvis_to_semantic.py --split val
+```
+
+You can then verify the dataloader:
+
+```bash
+python scripts/test_dataloader.py
+```
+
+## Baseline Training
+
+Train the SegFormer baseline using the current configuration in `configs/baseline_config.py`:
+
+```bash
+python scripts/train_baseline.py
+```
+
+This produces:
+
+- checkpoints under `checkpoints/`
+- prediction comparison outputs under `outputs/predictions/`
+
+## Running Motion Compensation
+
+Run the feature-based partial affine motion compensation prototype on a sample video:
+
+```bash
+python scripts/run_motion_compensation.py \
+  --input ../RipVIS/train/videos/RipVIS-051.mp4 \
+  --output outputs/motion_compensation/RipVIS-051_stabilised.mp4 \
+  --comparison-output outputs/motion_compensation/RipVIS-051_comparison.mp4 \
+  --results outputs/motion_compensation/RipVIS-051_results.json
+```
+
+## Running Video Segmentation Inference
+
+Run frame-level SegFormer inference on a video and save overlay, binary mask, and probability outputs:
+
+```bash
+python scripts/run_video_segmentation.py \
+  --input ../RipVIS/train/videos/RipVIS-051.mp4 \
+  --checkpoint checkpoints/best_model.pt \
+  --output-overlay outputs/video_inference/RipVIS-051_original_overlay.mp4 \
+  --output-mask outputs/video_inference/RipVIS-051_original_mask.mp4 \
+  --output-prob outputs/video_inference/RipVIS-051_original_prob.mp4 \
+  --threshold 0.5
+```
+
+## Running Temporal Aggregation
+
+Run temporal aggregation over a probability video:
+
+```bash
+python scripts/run_temporal_aggregation.py \
+  --input-prob-video outputs/video_inference/RipVIS-051_original_prob.mp4 \
+  --output-prob-video outputs/temporal_aggregation/RipVIS-051_original_agg_prob.mp4 \
+  --output-mask-video outputs/temporal_aggregation/RipVIS-051_original_agg_mask.mp4 \
+  --output-comparison-video outputs/temporal_aggregation/RipVIS-051_original_agg_compare.mp4 \
+  --results outputs/temporal_aggregation/RipVIS-051_original_agg_results.json \
+  --window-size 5 \
+  --threshold 0.5 \
+  --motion-results outputs/motion_compensation/RipVIS-051_results.json
+```
+
+## Running The Integrated MARSP Pipeline
+
+Run the full motion-aware SurfWatch pipeline end to end:
+
+```bash
+python scripts/run_marsp_pipeline.py \
+  --video-name RipVIS-051 \
+  --input ../RipVIS/train/videos/RipVIS-051.mp4 \
+  --checkpoint checkpoints/best_model.pt \
+  --window-size 5 \
+  --threshold 0.5
+```
+
+This pipeline currently performs:
+
+1. motion compensation
+2. frame-level SegFormer inference on original and stabilised video
+3. motion-adaptive temporal aggregation
+4. generation of stage-wise outputs and a pipeline summary JSON
+
+Outputs are written under:
+
+- `outputs/motion_compensation/`
+- `outputs/video_inference/`
+- `outputs/temporal_aggregation/`
+- `outputs/marsp/`
 
 ## Status
 
-SurfWatch is currently in the planning and documentation phase. The README will expand as the data pipeline, training code, evaluation scripts, and application components are added to the repository.
+SurfWatch now has:
+
+- a working semantic segmentation dataset pipeline
+- a trained SegFormer baseline
+- motion compensation and temporal aggregation prototypes
+- an integrated MARSP pipeline runner for end-to-end experimentation
+
+The next stage of the project is to evaluate and refine the motion-aware pipeline more systematically across additional videos and compare it against the established baseline.

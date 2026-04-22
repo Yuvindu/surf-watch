@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 import cv2
 import numpy as np
@@ -10,6 +10,11 @@ import numpy as np
 class TemporalAggregationConfig:
     window_size: int = 5
     threshold: float = 0.5
+    low_motion_translation_px: float = 1.0
+    high_motion_translation_px: float = 4.0
+    low_motion_rotation_deg: float = 0.05
+    high_motion_rotation_deg: float = 0.25
+    min_neighbor_weight: float = 0.1
 
     def __post_init__(self):
         if self.window_size < 1 or self.window_size % 2 == 0:
@@ -35,6 +40,130 @@ def aggregate_probability_maps(
         window = probability_maps[start:end]
         mean_map = np.mean(window, axis=0).astype(np.float32)
         aggregated.append(mean_map)
+
+    return aggregated
+
+
+def _normalize_motion(value: float, low: float, high: float) -> float:
+    if high <= low:
+        return 0.0
+    if value <= low:
+        return 0.0
+    if value >= high:
+        return 1.0
+    return float((value - low) / (high - low))
+
+
+def build_motion_scores_from_metadata(
+    frame_motion_metadata: Optional[List[dict]],
+    num_frames: int,
+    config: TemporalAggregationConfig,
+) -> Optional[List[float]]:
+    """
+    Build one motion score per frame in [0, 1], where higher means less reliable
+    temporal aggregation due to stronger motion or failed alignment.
+
+    The motion metadata is expected to come from the motion compensation stage and
+    to describe transforms between consecutive frames. Therefore metadata length is
+    usually num_frames - 1, and score[0] is set to 0.0 because frame 0 has no
+    previous-frame transform.
+    """
+    if not frame_motion_metadata:
+        return None
+
+    scores = [0.0] * num_frames
+
+    usable = min(len(frame_motion_metadata), max(0, num_frames - 1))
+    for i in range(usable):
+        item = frame_motion_metadata[i]
+
+        if item.get("fallback", False) or not item.get("success", False):
+            scores[i + 1] = 1.0
+            continue
+
+        translation_mag = float(item.get("translation_magnitude_px", 0.0))
+        rotation_deg = abs(float(item.get("rotation_deg", 0.0)))
+
+        translation_score = _normalize_motion(
+            translation_mag,
+            config.low_motion_translation_px,
+            config.high_motion_translation_px,
+        )
+        rotation_score = _normalize_motion(
+            rotation_deg,
+            config.low_motion_rotation_deg,
+            config.high_motion_rotation_deg,
+        )
+
+        scores[i + 1] = float((translation_score + rotation_score) / 2.0)
+
+    return scores
+
+
+def _adaptive_radius(base_radius: int, motion_score: float) -> int:
+    if motion_score >= 0.75:
+        return 0
+    if motion_score >= 0.40:
+        return min(1, base_radius)
+    return base_radius
+
+
+def _neighbor_weight(
+    distance: int,
+    target_motion_score: float,
+    neighbor_motion_score: float,
+    config: TemporalAggregationConfig,
+) -> float:
+    if distance == 0:
+        return 1.0
+
+    if target_motion_score >= 0.75 or neighbor_motion_score >= 0.75:
+        return 0.0
+
+    temporal_decay = 1.0 / (1.0 + distance)
+    motion_penalty = 1.0 - max(target_motion_score, neighbor_motion_score)
+    weight = temporal_decay * (0.25 + 0.75 * motion_penalty)
+    return max(config.min_neighbor_weight, float(weight))
+
+
+def aggregate_probability_maps_motion_adaptive(
+    probability_maps: List[np.ndarray],
+    motion_scores: List[float],
+    config: TemporalAggregationConfig,
+) -> List[np.ndarray]:
+    """
+    Apply motion-adaptive temporal aggregation.
+
+    High-motion frames use a smaller effective temporal window, and neighboring
+    frames are weighted down when motion magnitude is high or alignment is poor.
+    """
+    if len(probability_maps) != len(motion_scores):
+        raise ValueError("probability_maps and motion_scores must have the same length")
+
+    base_radius = config.window_size // 2
+    aggregated = []
+
+    for t in range(len(probability_maps)):
+        radius = _adaptive_radius(base_radius, motion_scores[t])
+        start = max(0, t - radius)
+        end = min(len(probability_maps), t + radius + 1)
+
+        weighted_sum = np.zeros_like(probability_maps[t], dtype=np.float32)
+        total_weight = 0.0
+
+        for j in range(start, end):
+            distance = abs(j - t)
+            weight = _neighbor_weight(distance, motion_scores[t], motion_scores[j], config)
+            if weight <= 0.0:
+                continue
+
+            weighted_sum += probability_maps[j] * weight
+            total_weight += weight
+
+        if total_weight <= 0.0:
+            aggregated.append(probability_maps[t].astype(np.float32))
+        else:
+            aggregated.append((weighted_sum / total_weight).astype(np.float32))
 
     return aggregated
 

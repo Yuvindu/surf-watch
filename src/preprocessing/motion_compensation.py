@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Optional
 
 import cv2
@@ -157,8 +156,32 @@ def stabilise_video(
         M, info = estimate_partial_affine_transform(
             orb, matcher, prev_gray, curr_gray, config
         )
+
+        if M is not None:
+            dx, dy, da = affine_to_params(M)
+            translation_mag = float(np.sqrt(dx ** 2 + dy ** 2))
+            rotation_deg = float(np.degrees(da))
+        else:
+            dx, dy, da = 0.0, 0.0, 0.0
+            translation_mag = 0.0
+            rotation_deg = 0.0
+
+        frame_metadata = {
+            "frame_index": i,
+            "kp_prev": info["kp_prev"],
+            "kp_curr": info["kp_curr"],
+            "good_matches": info["good_matches"],
+            "inliers": info["inliers"],
+            "success": info["success"],
+            "fallback": info["fallback"],
+            "translation_x_px": float(dx),
+            "translation_y_px": float(dy),
+            "translation_magnitude_px": float(translation_mag),
+            "rotation_deg": float(rotation_deg),
+        }
+
         transforms.append(M)
-        diagnostics.append(info)
+        diagnostics.append(frame_metadata)
         prev_gray = curr_gray
 
         if i % 100 == 0:
@@ -248,4 +271,5 @@ def stabilise_video(
         "mean_correction_ty_px": round(float(np.mean(dy_vals)) if dy_vals else 0.0, 3),
         "mean_correction_angle_deg": round(float(np.degrees(np.mean(da_vals))) if da_vals else 0.0, 3),
         "smoothing_radius": config.smoothing_radius,
+        "per_frame_metadata": diagnostics,
     }
