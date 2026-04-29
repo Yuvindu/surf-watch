@@ -86,6 +86,7 @@ def main():
     parser.add_argument("--output-overlay", required=True, help="Path to output overlay video")
     parser.add_argument("--output-mask", required=True, help="Path to output mask video")
     parser.add_argument("--output-prob", required=True, help="Path to output probability video")
+    parser.add_argument("--threshold", type=float, default=0.5, help="Threshold for converting rip-current probabilities into a binary mask")
     args = parser.parse_args()
 
     config = BaselineConfig()
@@ -93,6 +94,7 @@ def main():
 
     print(f"Using device: {device}")
     print(f"Loading checkpoint: {args.checkpoint}")
+    print(f"Mask threshold: {args.threshold}")
 
     Path(args.output_overlay).parent.mkdir(parents=True, exist_ok=True)
     Path(args.output_mask).parent.mkdir(parents=True, exist_ok=True)
@@ -137,7 +139,7 @@ def main():
             break
 
         prob_map = predict_probability_map(model, frame, device, config.image_size)
-        mask = (prob_map >= 0.5).astype(np.uint8)
+        mask = (prob_map >= args.threshold).astype(np.uint8)
         overlay = make_overlay(frame, mask)
         mask_frame = (mask * 255).astype(np.uint8)
         prob_frame = np.clip(prob_map * 255.0, 0, 255).astype(np.uint8)
