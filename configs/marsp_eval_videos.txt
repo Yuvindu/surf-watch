@@ -1,0 +1,10 @@
+/workspace/RipVIS/train/videos/RipVIS-051.mp4
+/workspace/RipVIS/train/videos/RipVIS-006.mp4
+/workspace/RipVIS/train/videos/RipVIS-016.mp4
+/workspace/RipVIS/train/videos/RipVIS-029.mp4
+/workspace/RipVIS/train/videos/RipVIS-032.mp4
+/workspace/RipVIS/train/videos/RipVIS-041.mp4
+/workspace/RipVIS/train/videos/RipVIS-044.mp4
+/workspace/RipVIS/train/videos/RipVIS-058.mp4
+/workspace/RipVIS/train/videos/RipVIS-073.mp4
+/workspace/RipVIS/train/videos/RipVIS-089.mp4
