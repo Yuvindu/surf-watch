@@ -18,6 +18,16 @@ App runs at `http://localhost:5173`.
 
 ## Connecting the Real Backend
 
+This repo now includes a minimal backend adapter for the baseline-vs-MARSP video comparison flow:
+
+```bash
+python3 -m backend.server
+```
+
+The frontend posts uploaded videos to `http://localhost:8000/api/comparisons` by default. To use another API host, set `VITE_API_BASE_URL` before starting Vite.
+
+The backend wraps `scripts/run_baseline_vs_marsp_compare.py`, saves uploaded files under `outputs/frontend_uploads/`, and serves generated videos/metrics from `outputs/comparisons/`.
+
 All mock logic lives in one file: `src/services/mockApi.ts`. When the Python prediction backend is ready, only this file needs to be replaced.
 
 ### 1. Replace `simulateUpload`

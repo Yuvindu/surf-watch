@@ -7,6 +7,11 @@ import Paper from '@mui/material/Paper';
 import Grid from '@mui/material/Grid';
 import Divider from '@mui/material/Divider';
 import Chip from '@mui/material/Chip';
+import Table from '@mui/material/Table';
+import TableBody from '@mui/material/TableBody';
+import TableCell from '@mui/material/TableCell';
+import TableHead from '@mui/material/TableHead';
+import TableRow from '@mui/material/TableRow';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import WaterDropIcon from '@mui/icons-material/WaterDrop';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
@@ -32,7 +37,18 @@ export default function ResultsPage() {
     );
   }
 
-  const { upload, prediction, overlayUrl, confidenceScore, summaryLabel, caseName } = analysisCase;
+  const {
+    upload,
+    prediction,
+    overlayUrl,
+    confidenceScore,
+    summaryLabel,
+    caseName,
+    comparisonVideoUrl,
+    baselineOverlayUrl,
+    marspOverlayUrl,
+    metricTable,
+  } = analysisCase;
 
   // Use backend-provided confidence if available, otherwise fall back to mock prediction
   const displayConfidence = confidenceScore ?? prediction?.averageConfidence ?? 0;
@@ -86,10 +102,10 @@ export default function ResultsPage() {
           {/* Media + overlay */}
           <Grid item xs={12} md={7}>
             <Paper sx={{ p: { xs: 1.5, sm: 2 }, bgcolor: 'background.paper' }}>
-              {/* If the backend provided a pre-rendered overlay video, show it directly */}
-              {overlayUrl ? (
+              {/* If the backend provided a pre-rendered comparison video, show it directly */}
+              {comparisonVideoUrl || overlayUrl ? (
                 <video
-                  src={overlayUrl}
+                  src={comparisonVideoUrl ?? overlayUrl}
                   controls
                   style={{ width: '100%', borderRadius: 4, display: 'block' }}
                 />
@@ -109,6 +125,39 @@ export default function ResultsPage() {
                 />
               )}
             </Paper>
+
+            {(baselineOverlayUrl || marspOverlayUrl) && (
+              <Grid container spacing={2} sx={{ mt: 0 }}>
+                {baselineOverlayUrl && (
+                  <Grid item xs={12} sm={6}>
+                    <Paper sx={{ p: 1.25, bgcolor: 'background.paper' }}>
+                      <Typography variant="caption" color="text.secondary" display="block" mb={1}>
+                        Baseline overlay
+                      </Typography>
+                      <video
+                        src={baselineOverlayUrl}
+                        controls
+                        style={{ width: '100%', borderRadius: 4, display: 'block' }}
+                      />
+                    </Paper>
+                  </Grid>
+                )}
+                {marspOverlayUrl && (
+                  <Grid item xs={12} sm={6}>
+                    <Paper sx={{ p: 1.25, bgcolor: 'background.paper' }}>
+                      <Typography variant="caption" color="text.secondary" display="block" mb={1}>
+                        MARSP overlay
+                      </Typography>
+                      <video
+                        src={marspOverlayUrl}
+                        controls
+                        style={{ width: '100%', borderRadius: 4, display: 'block' }}
+                      />
+                    </Paper>
+                  </Grid>
+                )}
+              </Grid>
+            )}
           </Grid>
 
           {/* Stats panel */}
@@ -178,6 +227,36 @@ export default function ResultsPage() {
             </Paper>
           </Grid>
         </Grid>
+
+        {metricTable && metricTable.length > 0 && (
+          <Paper sx={{ mt: 3, p: { xs: 1.5, sm: 2 }, bgcolor: 'background.paper', overflowX: 'auto' }}>
+            <Typography variant="subtitle1" fontWeight={700} mb={1.5}>
+              Baseline vs MARSP Metrics
+            </Typography>
+            <Table size="small" sx={{ minWidth: 620 }}>
+              <TableHead>
+                <TableRow>
+                  <TableCell>Metric</TableCell>
+                  <TableCell align="right">Baseline</TableCell>
+                  <TableCell align="right">MARSP</TableCell>
+                  <TableCell align="right">Delta</TableCell>
+                  <TableCell>Preferred</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {metricTable.map(metric => (
+                  <TableRow key={metric.metric}>
+                    <TableCell>{metric.metric.replace(/_/g, ' ')}</TableCell>
+                    <TableCell align="right">{metric.baseline}</TableCell>
+                    <TableCell align="right">{metric.marsp}</TableCell>
+                    <TableCell align="right">{metric.delta}</TableCell>
+                    <TableCell>{metric.preferred_direction}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </Paper>
+        )}
       </Box>
     </Box>
   );

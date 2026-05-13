@@ -14,17 +14,19 @@ import StatusStepper from '../components/StatusStepper';
 import { useFileHandler } from '../hooks/useFileHandler';
 import { useDemoPredict } from '../hooks/useDemoPredict';
 import { AnalysisContext } from '../context/AnalysisContext';
+import { normalizeCaseResponse } from '../models/analysis';
 import { formatFileSize, generateId } from '../utils/helpers';
 
 export default function AnalysePage() {
   const navigate = useNavigate();
   const { uploadFile, error, handleFile, clearFile } = useFileHandler();
-  const { status, currentStage, result, runPrediction, reset } = useDemoPredict();
+  const { status, currentStage, result, caseResponse, error: analysisError, runPrediction, runComparison, reset } = useDemoPredict();
   const { addCase, updateCase } = useContext(AnalysisContext);
   const caseIdRef = useRef<string | null>(null);
 
   const isProcessing = status === 'processing';
   const isComplete = status === 'complete';
+  const hasCompletedAnalysis = isComplete && (result || caseResponse);
 
   async function handleRun() {
     if (!uploadFile) return;
@@ -38,9 +40,26 @@ export default function AnalysePage() {
       prediction: null,
       createdAt: new Date().toISOString(),
     });
+    if (uploadFile.fileType === 'video') {
+      const response = await runComparison(uploadFile);
+      if (response && caseIdRef.current) {
+        const completedCaseId = caseIdRef.current;
+        updateCase(completedCaseId, {
+          ...normalizeCaseResponse(response, uploadFile),
+          id: completedCaseId,
+        });
+        navigate(`/results/${completedCaseId}`);
+      } else if (caseIdRef.current) {
+        updateCase(caseIdRef.current, { status: 'error' });
+      }
+      return;
+    }
+
     const prediction = await runPrediction(uploadFile);
     if (prediction && caseIdRef.current) {
       updateCase(caseIdRef.current, { status: 'complete', prediction });
+    } else if (caseIdRef.current) {
+      updateCase(caseIdRef.current, { status: 'error' });
     }
   }
 
@@ -65,6 +84,7 @@ export default function AnalysePage() {
         </Typography>
 
         {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+        {analysisError && <Alert severity="error" sx={{ mb: 2 }}>{analysisError}</Alert>}
 
         {!uploadFile && !isProcessing && !isComplete && (
           <FileUploader onFile={handleFile} disabled={false} />
@@ -122,7 +142,7 @@ export default function AnalysePage() {
               startIcon={<PlayArrowIcon />}
               onClick={handleRun}
             >
-              Run Detection
+              {uploadFile.fileType === 'video' ? 'Run Baseline vs MARSP Comparison' : 'Run Detection'}
             </Button>
           </Paper>
         )}
@@ -136,7 +156,7 @@ export default function AnalysePage() {
           </Paper>
         )}
 
-        {isComplete && result && (
+        {hasCompletedAnalysis && (
           <Paper sx={{ p: { xs: 2.5, sm: 3 }, bgcolor: 'background.paper' }}>
             <Typography variant="subtitle1" fontWeight={700} mb={3}>
               Analysis complete

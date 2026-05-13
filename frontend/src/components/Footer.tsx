@@ -52,7 +52,7 @@ export default function Footer() {
               }}
             >
               <Typography variant="caption" color="text.secondary" fontWeight={500}>
-                Demo Mode — all predictions simulated
+                Video comparison mode enabled
               </Typography>
             </Box>
           </Grid>
@@ -118,7 +118,7 @@ export default function Footer() {
             © {new Date().getFullYear()} SurfWatch — COMP6002 Research Project
           </Typography>
           <Typography variant="caption" color="text.disabled">
-            All detections are simulated mock data
+            Image detections use demo data; video comparisons run the local pipeline
           </Typography>
         </Box>
       </Box>

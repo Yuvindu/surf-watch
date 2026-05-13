@@ -26,6 +26,23 @@ export interface AnalysisCase {
   predictionMaskUrl?: string;      // backend: predictionMaskUrl (pre-rendered mask)
   confidenceScore?: number;        // backend: confidenceScore (flat, 0–1)
   summaryLabel?: string;           // backend: summaryLabel e.g. "Rip current detected"
+  comparisonVideoUrl?: string;     // backend: baseline-vs-MARSP side-by-side video
+  baselineOverlayUrl?: string;     // backend: baseline overlay video
+  marspOverlayUrl?: string;        // backend: MARSP overlay video
+  baselineMaskUrl?: string;        // backend: baseline mask video
+  metricsUrl?: string;             // backend: comparison JSON artifact
+  metricTable?: ComparisonMetric[];
+  comparison?: Record<string, number>;
+  baseline?: Record<string, number>;
+  marsp?: Record<string, number>;
+}
+
+export interface ComparisonMetric {
+  metric: string;
+  baseline: number;
+  marsp: number;
+  delta: number;
+  preferred_direction: 'higher' | 'lower';
 }
 
 /** Exact shape of the backend API response — do not change without coordinating with backend. */
@@ -40,6 +57,15 @@ export interface CaseResponse {
   predictionMaskUrl: string;
   confidenceScore: number;
   summaryLabel: string;
+  comparisonVideoUrl?: string;
+  baselineOverlayUrl?: string;
+  marspOverlayUrl?: string;
+  baselineMaskUrl?: string;
+  metricsUrl?: string;
+  metricTable?: ComparisonMetric[];
+  comparison?: Record<string, number>;
+  baseline?: Record<string, number>;
+  marsp?: Record<string, number>;
 }
 
 /**
@@ -64,5 +90,14 @@ export function normalizeCaseResponse(
     predictionMaskUrl: response.predictionMaskUrl,
     confidenceScore: response.confidenceScore,
     summaryLabel: response.summaryLabel,
+    comparisonVideoUrl: response.comparisonVideoUrl,
+    baselineOverlayUrl: response.baselineOverlayUrl,
+    marspOverlayUrl: response.marspOverlayUrl,
+    baselineMaskUrl: response.baselineMaskUrl,
+    metricsUrl: response.metricsUrl,
+    metricTable: response.metricTable,
+    comparison: response.comparison,
+    baseline: response.baseline,
+    marsp: response.marsp,
   };
 }
