@@ -208,6 +208,7 @@ This pipeline currently performs:
 3. motion-adaptive temporal aggregation
 4. generation of stage-wise outputs and a pipeline summary JSON
 
+
 Outputs are written under:
 
 - `outputs/motion_compensation/`
@@ -215,7 +216,42 @@ Outputs are written under:
 - `outputs/temporal_aggregation/`
 - `outputs/marsp/`
 
+## Running Baseline vs MARSP Comparison
+
+Run the baseline-vs-MARSP comparison workflow on a single video:
+
+```bash
+python scripts/run_baseline_vs_marsp_compare.py \
+  --video-name RipVIS-051 \
+  --input ../RipVIS/train/videos/RipVIS-051.mp4 \
+  --checkpoint checkpoints/best_model.pt \
+  --window-size 5 \
+  --threshold 0.5
+```
+
+This workflow currently performs:
+
+1. baseline SegFormer inference on the original video
+2. full MARSP processing on the same video
+3. rendering of baseline and MARSP overlay outputs on the original video frames
+4. generation of a side-by-side comparison video
+5. computation of temporal stability metrics for baseline and MARSP outputs
+6. generation of a single JSON comparison summary with side-by-side metric values
+
+Outputs are written under:
+
+- `outputs/comparisons/`
+
+Typical artifacts include:
+
+- `<video_name>_baseline_overlay.mp4`
+- `<video_name>_baseline_mask.mp4`
+- `<video_name>_marsp_overlay.mp4`
+- `<video_name>_baseline_vs_marsp.mp4`
+- `<video_name>_baseline_vs_marsp_metrics.json`
+
 ## Status
+
 
 SurfWatch now has:
 
@@ -224,4 +260,4 @@ SurfWatch now has:
 - motion compensation and temporal aggregation prototypes
 - an integrated MARSP pipeline runner for end-to-end experimentation
 
-The next stage of the project is to evaluate and refine the motion-aware pipeline more systematically across additional videos and compare it against the established baseline.
+The next stage of the project is to consolidate the baseline and MARSP comparison workflow, review trade-offs between stability gains and added pipeline complexity, and prepare the project for final reporting and demonstration.
