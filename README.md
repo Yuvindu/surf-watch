@@ -250,6 +250,10 @@ Typical artifacts include:
 - `<video_name>_baseline_vs_marsp.mp4`
 - `<video_name>_baseline_vs_marsp_metrics.json`
 
+## Running The Web Demo
+
+The React frontend can run against a local Python backend adapter that wraps the baseline-vs-MARSP comparison workflow. See [docs/frontend-backend-comparison-flow.md](/Users/rashmikecaldera/Developer/curtin/CSP/surfwatch/docs/frontend-backend-comparison-flow.md) for the full startup steps, API contract, artifact locations, and troubleshooting notes.
+
 ## Status
 
 

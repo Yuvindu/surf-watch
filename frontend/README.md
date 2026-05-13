@@ -28,137 +28,11 @@ The frontend posts uploaded videos to `http://localhost:8000/api/comparisons` by
 
 The backend wraps `scripts/run_baseline_vs_marsp_compare.py`, saves uploaded files under `outputs/frontend_uploads/`, and serves generated videos/metrics from `outputs/comparisons/`.
 
-All mock logic lives in one file: `src/services/mockApi.ts`. When the Python prediction backend is ready, only this file needs to be replaced.
+For the full frontend/backend startup guide and request flow, see [`../docs/frontend-backend-comparison-flow.md`](../docs/frontend-backend-comparison-flow.md).
 
-### 1. Replace `simulateUpload`
+Image uploads still use the mock prediction flow in `src/services/mockApi.ts`. Video uploads use the local comparison backend through `src/services/comparisonApi.ts`.
 
-**Current (mock):**
-```ts
-export async function simulateUpload(file: File): Promise<UploadFile> {
-  await delay(1500);
-  // returns a fake UploadFile
-}
-```
-
-**Replace with a real API call:**
-```ts
-export async function simulateUpload(file: File): Promise<UploadFile> {
-  const form = new FormData();
-  form.append('file', file);
-
-  const res = await fetch('http://localhost:8000/api/upload', {
-    method: 'POST',
-    body: form,
-  });
-
-  const data = await res.json();
-  return {
-    id: data.id,
-    file,
-    fileType: file.type.startsWith('video') ? 'video' : 'image',
-    previewUrl: URL.createObjectURL(file),
-    status: 'ready',
-    uploadedAt: data.uploaded_at,
-  };
-}
-```
-
----
-
-### 2. Replace `simulatePrediction`
-
-**Current (mock):** Steps through fake pipeline stages with random delays and returns randomised bounding boxes + confidence scores.
-
-**Replace with a real API call:**
-```ts
-export async function simulatePrediction(
-  uploadFile: UploadFile,
-  onStageChange: (stage: PipelineStage) => void,
-): Promise<PredictionResult> {
-
-  // Optionally poll a /status endpoint and call onStageChange as stages complete.
-  // Minimal version — single blocking call:
-  onStageChange('upload');
-
-  const res = await fetch(`http://localhost:8000/api/predict/${uploadFile.id}`, {
-    method: 'POST',
-  });
-
-  const data = await res.json();
-  onStageChange('complete');
-
-  return {
-    id: data.id,
-    fileId: uploadFile.id,
-    fileType: uploadFile.fileType,
-    frames: data.frames,           // must match FramePrediction[] shape
-    averageConfidence: data.average_confidence,
-    processingTimeMs: data.processing_time_ms,
-    createdAt: data.created_at,
-  };
-}
-```
-
----
-
-### Expected API Response Shape
-
-The backend must return JSON matching these TypeScript types (defined in `src/models/`):
-
-```ts
-// POST /api/predict/:fileId  →  PredictionResult
-{
-  id: string,
-  average_confidence: number,       // 0–1
-  processing_time_ms: number,
-  created_at: string,               // ISO 8601
-  frames: [
-    {
-      frame_index: number,
-      timestamp: number,            // seconds
-      regions: [
-        {
-          id: string,
-          bounding_box: {
-            top_left:     { x: number, y: number },  // 0–1 relative coords
-            bottom_right: { x: number, y: number }
-          },
-          pixel_coverage: number    // percentage of frame area
-        }
-      ],
-      confidence: {
-        overall: number,
-        per_region: [{ region_id: string, score: number }]
-      }
-    }
-  ]
-}
-```
-
-> Coordinates must be **relative (0–1)**, not pixels — the overlay component scales them against the rendered image dimensions.
-
----
-
-### Optional: Stage Progress via Polling
-
-If the backend exposes a `/api/status/:jobId` endpoint, you can call `onStageChange` as each stage completes:
-
-```ts
-const POLL_INTERVAL = 1000; // ms
-
-async function pollStatus(jobId: string, onStageChange: (s: PipelineStage) => void) {
-  const seen = new Set<PipelineStage>();
-  while (true) {
-    const res = await fetch(`http://localhost:8000/api/status/${jobId}`);
-    const { stage } = await res.json();
-    if (!seen.has(stage)) { seen.add(stage); onStageChange(stage); }
-    if (stage === 'complete') break;
-    await new Promise(r => setTimeout(r, POLL_INTERVAL));
-  }
-}
-```
-
-The `StatusStepper` component advances automatically as `onStageChange` fires — no other UI changes needed.
+The current backend API is synchronous: it responds after the comparison video and metrics have been generated. The frontend advances the status stepper locally while that request is running.
 
 ---
 
@@ -176,7 +50,7 @@ Output is in `dist/`. Point your web server (Nginx, Caddy, etc.) at that directo
 
 ```
 src/
-├── services/mockApi.ts     ← swap this file when backend is ready
+├── services/               ← mock image flow and comparison API client
 ├── models/                 ← TypeScript types (keep aligned with backend schema)
 ├── components/             ← UI components (no backend logic)
 ├── pages/                  ← Route-level pages
