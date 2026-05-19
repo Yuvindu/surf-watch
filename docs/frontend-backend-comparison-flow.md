@@ -82,11 +82,13 @@ VITE_API_BASE_URL=http://127.0.0.1:8000 npm run dev
 4. `runComparison` calls `runBaselineMarspComparison` in `frontend/src/services/comparisonApi.ts`.
 5. The frontend sends a `POST /api/comparisons` request with the uploaded file as `multipart/form-data`.
 6. The backend saves the uploaded file under `outputs/frontend_uploads/`.
-7. The backend runs `scripts/run_baseline_vs_marsp_compare.py`.
-8. The comparison script runs baseline inference, the MARSP pipeline, overlay rendering, side-by-side video generation, and metric summarisation.
-9. The backend returns URLs for the generated comparison artifacts.
-10. The frontend stores the response in `AnalysisContext` and routes to the Results page.
-11. The Results page renders the side-by-side comparison video, baseline overlay, MARSP overlay, confidence summary, and metric table.
+7. The backend starts a comparison job and returns a `jobId`.
+8. The frontend polls `GET /api/comparisons/<jobId>` once per second.
+9. The backend updates `currentStage` and `currentTask` from the actual running subprocess output.
+10. The comparison script runs baseline inference, the MARSP pipeline, overlay rendering, side-by-side video generation, and metric summarisation.
+11. When the job completes, the backend status response includes URLs for the generated comparison artifacts.
+12. The frontend stores the completed response in `AnalysisContext` and routes to the Results page.
+13. The Results page renders the side-by-side comparison video, baseline overlay, MARSP overlay, confidence summary, and metric table.
 
 ## Backend API
 
@@ -102,20 +104,64 @@ Example response:
 
 ```json
 {
+  "jobId": "RipVIS-051-1778669621",
+  "caseId": "RipVIS-051-1778669621",
+  "caseName": "RipVIS-051.mp4",
+  "status": "processing",
+  "currentStage": "frame_extraction",
+  "currentTask": "Saving uploaded video for processing",
+  "createdAt": "2026-05-13T10:55:00+00:00",
+  "updatedAt": "2026-05-13T10:55:00+00:00"
+}
+```
+
+### `GET /api/comparisons/<jobId>`
+
+Returns the current backend job status. The frontend polls this endpoint while the comparison is running.
+
+Processing response:
+
+```json
+{
+  "jobId": "RipVIS-051-1778669621",
+  "caseId": "RipVIS-051-1778669621",
+  "caseName": "RipVIS-051.mp4",
+  "status": "processing",
+  "currentStage": "marsp_segmentation",
+  "currentTask": "Running SegFormer inference inside the MARSP pipeline",
+  "createdAt": "2026-05-13T10:55:00+00:00",
+  "updatedAt": "2026-05-13T10:57:00+00:00"
+}
+```
+
+Completed response:
+
+```json
+{
+  "jobId": "RipVIS-051-1778669621",
   "caseId": "RipVIS-051-1778669621",
   "caseName": "RipVIS-051.mp4",
   "status": "completed",
+  "currentStage": "complete",
+  "currentTask": "Comparison complete",
   "createdAt": "2026-05-13T10:55:00+00:00",
   "updatedAt": "2026-05-13T10:58:00+00:00",
-  "videoUrl": "http://127.0.0.1:8000/artifacts/outputs/frontend_uploads/RipVIS-051-1778669621.mp4",
-  "comparisonVideoUrl": "http://127.0.0.1:8000/artifacts/outputs/comparisons/RipVIS-051-1778669621_baseline_vs_marsp.mp4",
-  "baselineOverlayUrl": "http://127.0.0.1:8000/artifacts/outputs/comparisons/RipVIS-051-1778669621_baseline_overlay.mp4",
-  "marspOverlayUrl": "http://127.0.0.1:8000/artifacts/outputs/comparisons/RipVIS-051-1778669621_marsp_overlay.mp4",
-  "predictionMaskUrl": "http://127.0.0.1:8000/artifacts/outputs/temporal_aggregation/RipVIS-051-1778669621_stabilised_agg_mask.mp4",
-  "metricsUrl": "http://127.0.0.1:8000/artifacts/outputs/comparisons/RipVIS-051-1778669621_baseline_vs_marsp_metrics.json",
-  "confidenceScore": 0.82,
-  "summaryLabel": "MARSP improved temporal stability",
-  "metricTable": []
+  "result": {
+    "caseId": "RipVIS-051-1778669621",
+    "caseName": "RipVIS-051.mp4",
+    "status": "completed",
+    "createdAt": "2026-05-13T10:55:00+00:00",
+    "updatedAt": "2026-05-13T10:58:00+00:00",
+    "videoUrl": "http://127.0.0.1:8000/artifacts/outputs/frontend_uploads/RipVIS-051-1778669621.mp4",
+    "comparisonVideoUrl": "http://127.0.0.1:8000/artifacts/outputs/comparisons/RipVIS-051-1778669621_baseline_vs_marsp.mp4",
+    "baselineOverlayUrl": "http://127.0.0.1:8000/artifacts/outputs/comparisons/RipVIS-051-1778669621_baseline_overlay.mp4",
+    "marspOverlayUrl": "http://127.0.0.1:8000/artifacts/outputs/comparisons/RipVIS-051-1778669621_marsp_overlay.mp4",
+    "predictionMaskUrl": "http://127.0.0.1:8000/artifacts/outputs/temporal_aggregation/RipVIS-051-1778669621_stabilised_agg_mask.mp4",
+    "metricsUrl": "http://127.0.0.1:8000/artifacts/outputs/comparisons/RipVIS-051-1778669621_baseline_vs_marsp_metrics.json",
+    "confidenceScore": 0.82,
+    "summaryLabel": "MARSP improved temporal stability",
+    "metricTable": []
+  }
 }
 ```
 
@@ -206,7 +252,7 @@ python -m pip install -r requirements.txt
 
 ### Frontend finishes but no results page appears
 
-Refresh the Vite page and rerun the analysis. The frontend should navigate to `/results/<case-id>` after `POST /api/comparisons` returns.
+Refresh the Vite page and rerun the analysis. The frontend should navigate to `/results/<case-id>` after the polled comparison job returns `status: "completed"`.
 
 ### Port already in use
 
@@ -221,7 +267,7 @@ Stop the old process or start the affected server on a different port.
 
 ### Comparison takes a while
 
-That is expected. The backend runs baseline inference, MARSP processing, overlay rendering, and metric generation synchronously before responding to the frontend.
+That is expected. The backend runs baseline inference, MARSP processing, overlay rendering, and metric generation in a background job. The frontend polls job status and updates the active task while the job runs.
 
 ### Uploaded file too large
 

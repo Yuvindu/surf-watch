@@ -10,15 +10,18 @@ export function useDemoPredict() {
   const [currentStage, setCurrentStage] = useState<PipelineStage>('upload');
   const [result, setResult] = useState<PredictionResult | null>(null);
   const [caseResponse, setCaseResponse] = useState<CaseResponse | null>(null);
+  const [currentTask, setCurrentTask] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const runPrediction = useCallback(async (uploadFile: UploadFile): Promise<PredictionResult | null> => {
     setStatus('processing');
     setResult(null);
+    setCurrentTask(null);
     setError(null);
     try {
       const prediction = await simulatePrediction(uploadFile, (stage) => {
-        setCurrentStage(stage);
+          setCurrentStage(stage);
+          setCurrentTask(null);
       });
       setResult(prediction);
       setStatus('complete');
@@ -34,9 +37,10 @@ export function useDemoPredict() {
     setStatus('processing');
     setResult(null);
     setCaseResponse(null);
+    setCurrentTask(null);
     setError(null);
     try {
-      const response = await runBaselineMarspComparison(uploadFile, setCurrentStage);
+      const response = await runBaselineMarspComparison(uploadFile, setCurrentStage, setCurrentTask);
       setCaseResponse(response);
       setStatus('complete');
       return response;
@@ -52,8 +56,9 @@ export function useDemoPredict() {
     setCurrentStage('upload');
     setResult(null);
     setCaseResponse(null);
+    setCurrentTask(null);
     setError(null);
   }, []);
 
-  return { status, currentStage, result, caseResponse, error, runPrediction, runComparison, reset };
+  return { status, currentStage, currentTask, result, caseResponse, error, runPrediction, runComparison, reset };
 }

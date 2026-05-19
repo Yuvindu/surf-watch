@@ -15,18 +15,20 @@ import { useFileHandler } from '../hooks/useFileHandler';
 import { useDemoPredict } from '../hooks/useDemoPredict';
 import { AnalysisContext } from '../context/AnalysisContext';
 import { normalizeCaseResponse } from '../models/analysis';
+import { COMPARISON_PIPELINE_STAGES, PIPELINE_STAGES } from '../services/mockApi';
 import { formatFileSize, generateId } from '../utils/helpers';
 
 export default function AnalysePage() {
   const navigate = useNavigate();
   const { uploadFile, error, handleFile, clearFile } = useFileHandler();
-  const { status, currentStage, result, caseResponse, error: analysisError, runPrediction, runComparison, reset } = useDemoPredict();
+  const { status, currentStage, currentTask, result, caseResponse, error: analysisError, runPrediction, runComparison, reset } = useDemoPredict();
   const { addCase, updateCase } = useContext(AnalysisContext);
   const caseIdRef = useRef<string | null>(null);
 
   const isProcessing = status === 'processing';
   const isComplete = status === 'complete';
   const hasCompletedAnalysis = isComplete && (result || caseResponse);
+  const activeStages = uploadFile?.fileType === 'video' ? COMPARISON_PIPELINE_STAGES : PIPELINE_STAGES;
 
   async function handleRun() {
     if (!uploadFile) return;
@@ -152,7 +154,7 @@ export default function AnalysePage() {
             <Typography variant="subtitle1" fontWeight={700} mb={3}>
               Running MARSP pipeline…
             </Typography>
-            <StatusStepper currentStage={currentStage} isComplete={false} />
+            <StatusStepper currentStage={currentStage} currentTask={currentTask} isComplete={false} stages={activeStages} />
           </Paper>
         )}
 
@@ -161,7 +163,7 @@ export default function AnalysePage() {
             <Typography variant="subtitle1" fontWeight={700} mb={3}>
               Analysis complete
             </Typography>
-            <StatusStepper currentStage="complete" isComplete />
+            <StatusStepper currentStage="complete" isComplete stages={activeStages} />
             <Box sx={{ display: 'flex', gap: 2, mt: 3, flexWrap: 'wrap' }}>
               <Button variant="contained" onClick={handleViewResults} sx={{ flexGrow: { xs: 1, sm: 0 } }}>
                 View Results

@@ -321,6 +321,7 @@ def main() -> None:
         and Path(baseline_mask).exists()
         and Path(baseline_prob).exists()
     ):
+        print("[STAGE] Running baseline SegFormer inference", flush=True)
         run_command([
             sys.executable,
             "scripts/run_video_segmentation.py",
@@ -337,6 +338,7 @@ def main() -> None:
         Path(marsp_final_mask).exists()
         and Path(marsp_summary).exists()
     ):
+        print("[STAGE] Running MARSP motion-aware pipeline", flush=True)
         run_command([
             sys.executable,
             "scripts/run_marsp_pipeline.py",
@@ -348,6 +350,7 @@ def main() -> None:
         ])
 
     # 3. Build MARSP overlay on original frames
+    print("[STAGE] Rendering MARSP overlay on original frames", flush=True)
     save_overlay_video(
         original_video=input_video,
         mask_video=marsp_final_mask,
@@ -356,6 +359,7 @@ def main() -> None:
     )
 
     # 4. Build side-by-side baseline vs MARSP overlay video
+    print("[STAGE] Rendering baseline vs MARSP comparison video", flush=True)
     save_side_by_side_video(
         left_video=baseline_overlay,
         right_video=marsp_overlay,
@@ -363,6 +367,7 @@ def main() -> None:
     )
 
     # 5. Compute temporal stability metrics for baseline and MARSP final masks
+    print("[STAGE] Computing baseline vs MARSP temporal stability metrics", flush=True)
     baseline_masks, _ = load_mask_video(baseline_mask)
     marsp_masks, _ = load_mask_video(marsp_final_mask)
 

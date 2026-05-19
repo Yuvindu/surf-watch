@@ -5,8 +5,11 @@ export type PipelineStage =
   | 'upload'
   | 'frame_extraction'
   | 'motion_compensation'
+  | 'baseline_segmentation'
   | 'segmentation'
+  | 'marsp_segmentation'
   | 'temporal_aggregation'
+  | 'comparison_rendering'
   | 'complete';
 
 // 'completed' matches backend; 'complete' is the frontend-internal equivalent

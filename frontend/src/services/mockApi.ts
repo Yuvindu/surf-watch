@@ -54,12 +54,26 @@ export const PIPELINE_STAGES: PipelineStage[] = [
   'complete',
 ];
 
+export const COMPARISON_PIPELINE_STAGES: PipelineStage[] = [
+  'upload',
+  'frame_extraction',
+  'baseline_segmentation',
+  'motion_compensation',
+  'marsp_segmentation',
+  'temporal_aggregation',
+  'comparison_rendering',
+  'complete',
+];
+
 export const STAGE_LABELS: Record<PipelineStage, string> = {
   upload: 'Upload',
   frame_extraction: 'Frame Extraction',
   motion_compensation: 'Motion Compensation',
+  baseline_segmentation: 'Baseline Segmentation',
   segmentation: 'Segmentation',
+  marsp_segmentation: 'MARSP Segmentation',
   temporal_aggregation: 'Temporal Aggregation',
+  comparison_rendering: 'Comparison Rendering',
   complete: 'Complete',
 };
 
@@ -67,8 +81,11 @@ export const STAGE_DESCRIPTIONS: Record<PipelineStage, string> = {
   upload: 'Transferring file to processing server',
   frame_extraction: 'Decoding video frames for analysis',
   motion_compensation: 'Stabilising camera motion across frames',
+  baseline_segmentation: 'Running baseline SegFormer inference',
   segmentation: 'Running ML model to detect rip current regions',
+  marsp_segmentation: 'Running model inference in the MARSP pipeline',
   temporal_aggregation: 'Aggregating frame-level predictions over time',
+  comparison_rendering: 'Rendering comparison video and computing metrics',
   complete: 'Analysis complete',
 };
 

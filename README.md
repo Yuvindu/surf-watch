@@ -252,7 +252,46 @@ Typical artifacts include:
 
 ## Running The Web Demo
 
-The React frontend can run against a local Python backend adapter that wraps the baseline-vs-MARSP comparison workflow. See [docs/frontend-backend-comparison-flow.md](/Users/rashmikecaldera/Developer/curtin/CSP/surfwatch/docs/frontend-backend-comparison-flow.md) for the full startup steps, API contract, artifact locations, and troubleshooting notes.
+The React frontend runs against a local Python backend adapter that wraps the baseline-vs-MARSP comparison workflow.
+
+Start the backend from the repository root in one terminal:
+
+```bash
+source .venv/bin/activate
+python -m backend.server
+```
+
+The backend listens at:
+
+```text
+http://127.0.0.1:8000
+```
+
+Start the frontend in a second terminal:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Open the app at:
+
+```text
+http://localhost:5173/
+```
+
+Use `http://localhost:5173/analyse` to go straight to the upload screen. Do not open `http://127.0.0.1:8000` in the browser for the app; that is the backend API server and `GET /` returns `404` by design.
+
+If the frontend shows a blank page after dependency changes, clear Vite's optimized dependency cache and restart:
+
+```bash
+cd frontend
+rm -rf node_modules/.vite
+npm run dev -- --force
+```
+
+See [docs/frontend-backend-comparison-flow.md](/Users/rashmikecaldera/Developer/curtin/CSP/surfwatch/docs/frontend-backend-comparison-flow.md) for the full startup steps, API contract, artifact locations, and troubleshooting notes.
 
 ## Status
 

@@ -9,14 +9,16 @@ import type { PipelineStage } from '../models/analysis';
 interface StatusStepperProps {
   currentStage: PipelineStage;
   isComplete: boolean;
+  currentTask?: string | null;
+  stages?: PipelineStage[];
 }
 
-export default function StatusStepper({ currentStage, isComplete }: StatusStepperProps) {
-  const currentIndex = PIPELINE_STAGES.indexOf(currentStage);
+export default function StatusStepper({ currentStage, isComplete, currentTask, stages = PIPELINE_STAGES }: StatusStepperProps) {
+  const currentIndex = stages.indexOf(currentStage);
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-      {PIPELINE_STAGES.map((stage, i) => {
+      {stages.map((stage, i) => {
         const done = isComplete ? true : i < currentIndex;
         const active = !isComplete && i === currentIndex;
         return (
@@ -29,7 +31,7 @@ export default function StatusStepper({ currentStage, isComplete }: StatusSteppe
               ) : (
                 <RadioButtonUncheckedIcon sx={{ color: 'text.disabled', fontSize: 22 }} />
               )}
-              {i < PIPELINE_STAGES.length - 1 && (
+              {i < stages.length - 1 && (
                 <Box
                   sx={{
                     width: 2,
@@ -54,7 +56,7 @@ export default function StatusStepper({ currentStage, isComplete }: StatusSteppe
               </Typography>
               {active && (
                 <Typography variant="caption" color="text.secondary">
-                  {STAGE_DESCRIPTIONS[stage]}
+                  {currentTask ?? STAGE_DESCRIPTIONS[stage]}
                 </Typography>
               )}
             </Box>
