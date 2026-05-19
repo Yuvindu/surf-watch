@@ -15,9 +15,15 @@ function wait(ms: number) {
 
 interface ComparisonJobStatus {
   jobId: string;
+  caseId: string;
+  caseName: string;
   status: 'processing' | 'completed' | 'error';
   currentStage: PipelineStage;
   currentTask?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  windowSize?: number;
+  threshold?: number;
   error?: string;
   result?: CaseResponse;
 }
@@ -27,6 +33,8 @@ export async function runBaselineMarspComparison(
   options: ComparisonRunOptions,
   onStageChange: (stage: PipelineStage) => void,
   onTaskChange?: (task: string) => void,
+  onJobStart?: (status: ComparisonJobStatus) => void,
+  onJobProgress?: (status: ComparisonJobStatus) => void,
 ): Promise<CaseResponse> {
   const form = new FormData();
   form.append('file', uploadFile.file);
@@ -46,7 +54,9 @@ export async function runBaselineMarspComparison(
     throw new Error(startData.error ?? 'Comparison pipeline failed.');
   }
 
-  const jobId = startData.jobId as string;
+  const startStatus = startData as ComparisonJobStatus;
+  const jobId = startStatus.jobId;
+  onJobStart?.(startStatus);
   onStageChange(startData.currentStage ?? 'frame_extraction');
   onTaskChange?.(startData.currentTask ?? 'Preparing comparison job');
 
@@ -62,6 +72,7 @@ export async function runBaselineMarspComparison(
 
     onStageChange(statusData.currentStage);
     if (statusData.currentTask) onTaskChange?.(statusData.currentTask);
+    onJobProgress?.(statusData);
 
     if (statusData.status === 'error') {
       throw new Error(statusData.error ?? 'Comparison pipeline failed.');

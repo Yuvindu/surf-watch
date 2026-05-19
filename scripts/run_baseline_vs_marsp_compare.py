@@ -146,6 +146,16 @@ def save_side_by_side_video(
     )
 
     for left, right in zip(left_frames, right_frames):
+        left = left.copy()
+        cv2.putText(
+            left,
+            "Baseline",
+            (20, 40),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            1.0,
+            (255, 255, 255),
+            2,
+        )
         combined = np.hstack([left, right])
         writer.write(combined)
 

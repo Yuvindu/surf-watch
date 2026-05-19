@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import type { UploadFile } from '../models/upload';
 import type { PredictionResult } from '../models/prediction';
-import type { CaseResponse, PipelineStage, AnalysisStatus } from '../models/analysis';
+import type { CaseResponse, PipelineStage, AnalysisStatus, AnalysisCase } from '../models/analysis';
 import { simulatePrediction } from '../services/mockApi';
 import { runBaselineMarspComparison, type ComparisonRunOptions } from '../services/comparisonApi';
 
@@ -33,14 +33,39 @@ export function useDemoPredict() {
     }
   }, []);
 
-  const runComparison = useCallback(async (uploadFile: UploadFile, options: ComparisonRunOptions): Promise<CaseResponse | null> => {
+  const runComparison = useCallback(async (
+    uploadFile: UploadFile,
+    options: ComparisonRunOptions,
+    onCaseProgress?: (partial: Partial<AnalysisCase>) => void,
+  ): Promise<CaseResponse | null> => {
     setStatus('processing');
     setResult(null);
     setCaseResponse(null);
     setCurrentTask(null);
     setError(null);
     try {
-      const response = await runBaselineMarspComparison(uploadFile, options, setCurrentStage, setCurrentTask);
+      const response = await runBaselineMarspComparison(
+        uploadFile,
+        options,
+        setCurrentStage,
+        setCurrentTask,
+        status => onCaseProgress?.({
+          jobId: status.jobId,
+          currentStage: status.currentStage,
+          currentTask: status.currentTask,
+          updatedAt: status.updatedAt,
+          windowSize: status.windowSize,
+          threshold: status.threshold,
+        }),
+        status => onCaseProgress?.({
+          status: status.status === 'completed' ? 'complete' : status.status,
+          currentStage: status.currentStage,
+          currentTask: status.currentTask,
+          updatedAt: status.updatedAt,
+          windowSize: status.windowSize,
+          threshold: status.threshold,
+        }),
+      );
       setCaseResponse(response);
       setStatus('complete');
       return response;

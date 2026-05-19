@@ -21,9 +21,11 @@ export interface AnalysisCase {
   upload: UploadFile;
   status: AnalysisStatus;
   currentStage: PipelineStage;
+  currentTask?: string | null;
   prediction: PredictionResult | null;
   createdAt: string;
   updatedAt?: string;              // backend: updatedAt
+  jobId?: string;                  // backend: async comparison job id
   videoUrl?: string;               // backend: videoUrl (remote-hosted source)
   overlayUrl?: string;             // backend: overlayUrl (pre-rendered overlay video)
   predictionMaskUrl?: string;      // backend: predictionMaskUrl (pre-rendered mask)

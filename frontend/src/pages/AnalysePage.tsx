@@ -24,7 +24,7 @@ export default function AnalysePage() {
   const navigate = useNavigate();
   const { uploadFile, error, handleFile, clearFile } = useFileHandler();
   const { status, currentStage, currentTask, result, caseResponse, error: analysisError, runPrediction, runComparison, reset } = useDemoPredict();
-  const { addCase, updateCase } = useContext(AnalysisContext);
+  const { history, addCase, updateCase } = useContext(AnalysisContext);
   const caseIdRef = useRef<string | null>(null);
   const [windowSize, setWindowSize] = useState(5);
   const [threshold, setThreshold] = useState(0.5);
@@ -32,7 +32,12 @@ export default function AnalysePage() {
   const isProcessing = status === 'processing';
   const isComplete = status === 'complete';
   const hasCompletedAnalysis = isComplete && (result || caseResponse);
-  const activeStages = uploadFile?.fileType === 'video' ? COMPARISON_PIPELINE_STAGES : PIPELINE_STAGES;
+  const activeProcessingCase = history.find(c => c.status === 'processing');
+  const isShowingPersistedProcessing = !isProcessing && !!activeProcessingCase;
+  const displayedStage = isShowingPersistedProcessing ? activeProcessingCase.currentStage : currentStage;
+  const displayedTask = isShowingPersistedProcessing ? activeProcessingCase.currentTask : currentTask;
+  const displayedUploadType = uploadFile?.fileType ?? activeProcessingCase?.upload.fileType;
+  const activeStages = displayedUploadType === 'video' ? COMPARISON_PIPELINE_STAGES : PIPELINE_STAGES;
 
   async function handleRun() {
     if (!uploadFile) return;
@@ -43,18 +48,25 @@ export default function AnalysePage() {
       upload: uploadFile,
       status: 'processing',
       currentStage: 'upload',
+      currentTask: 'Uploading video to the local comparison API',
       prediction: null,
       createdAt: new Date().toISOString(),
+      windowSize: uploadFile.fileType === 'video' ? windowSize : undefined,
+      threshold: uploadFile.fileType === 'video' ? threshold : undefined,
     });
     if (uploadFile.fileType === 'video') {
-      const response = await runComparison(uploadFile, { windowSize, threshold });
+      const response = await runComparison(uploadFile, { windowSize, threshold }, partial => {
+        updateCase(caseId, partial);
+      });
       if (response && caseIdRef.current) {
         const completedCaseId = caseIdRef.current;
         updateCase(completedCaseId, {
           ...normalizeCaseResponse(response, uploadFile),
           id: completedCaseId,
         });
-        navigate(`/results/${completedCaseId}`);
+        if (window.location.pathname.startsWith('/analyse')) {
+          navigate(`/results/${completedCaseId}`);
+        }
       } else if (caseIdRef.current) {
         updateCase(caseIdRef.current, { status: 'error' });
       }
@@ -92,11 +104,11 @@ export default function AnalysePage() {
         {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
         {analysisError && <Alert severity="error" sx={{ mb: 2 }}>{analysisError}</Alert>}
 
-        {!uploadFile && !isProcessing && !isComplete && (
+        {!uploadFile && !isProcessing && !isComplete && !activeProcessingCase && (
           <FileUploader onFile={handleFile} disabled={false} />
         )}
 
-        {uploadFile && !isProcessing && !isComplete && (
+        {uploadFile && !isProcessing && !isComplete && !activeProcessingCase && (
           <Paper sx={{ p: { xs: 2, sm: 2.5 }, mb: 3, bgcolor: 'background.paper' }}>
             <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start', mb: 2 }}>
               {/* Thumbnail */}
@@ -195,12 +207,17 @@ export default function AnalysePage() {
           </Paper>
         )}
 
-        {isProcessing && (
+        {(isProcessing || activeProcessingCase) && (
           <Paper sx={{ p: { xs: 2.5, sm: 3 }, bgcolor: 'background.paper' }}>
             <Typography variant="subtitle1" fontWeight={700} mb={3}>
               Running MARSP pipeline…
             </Typography>
-            <StatusStepper currentStage={currentStage} currentTask={currentTask} isComplete={false} stages={activeStages} />
+            {activeProcessingCase && !uploadFile && (
+              <Typography variant="body2" color="text.secondary" mb={2} sx={{ wordBreak: 'break-all' }}>
+                {activeProcessingCase.caseName ?? activeProcessingCase.upload.file.name}
+              </Typography>
+            )}
+            <StatusStepper currentStage={displayedStage} currentTask={displayedTask} isComplete={false} stages={activeStages} />
           </Paper>
         )}
 
