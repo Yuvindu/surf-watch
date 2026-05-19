@@ -49,7 +49,7 @@ The backend wraps `scripts/run_baseline_vs_marsp_compare.py`, saves uploaded fil
 
 For the full frontend/backend startup guide and request flow, see [`../docs/frontend-backend-comparison-flow.md`](../docs/frontend-backend-comparison-flow.md).
 
-Image uploads still use the mock prediction flow in `src/services/mockApi.ts`. Video uploads use the local comparison backend through `src/services/comparisonApi.ts`.
+Image uploads still use the mock prediction flow in `src/services/mockApi.ts`. Video uploads use the local comparison backend through `src/services/comparisonApi.ts`, including adjustable `window-size` and `threshold` parameters from the Analyse page.
 
 The comparison backend runs video processing as a background job. The frontend polls job status and updates the stepper from the backend's actual current task.
 

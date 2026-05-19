@@ -147,7 +147,40 @@ def confidence_score(metrics: dict[str, Any]) -> float:
     return max(0.0, min(1.0, (dice + iou) / 2.0))
 
 
-def run_comparison(video_name: str, input_path: Path, checkpoint: Path, job_id: str | None = None) -> dict[str, Any]:
+def parse_int_field(form: cgi.FieldStorage, name: str, default: int, minimum: int, maximum: int) -> int:
+    raw_value = form.getfirst(name)
+    if raw_value in (None, ""):
+        return default
+    try:
+        value = int(str(raw_value))
+    except ValueError as exc:
+        raise ValueError(f"{name} must be an integer.") from exc
+    if value < minimum or value > maximum:
+        raise ValueError(f"{name} must be between {minimum} and {maximum}.")
+    return value
+
+
+def parse_float_field(form: cgi.FieldStorage, name: str, default: float, minimum: float, maximum: float) -> float:
+    raw_value = form.getfirst(name)
+    if raw_value in (None, ""):
+        return default
+    try:
+        value = float(str(raw_value))
+    except ValueError as exc:
+        raise ValueError(f"{name} must be a number.") from exc
+    if value < minimum or value > maximum:
+        raise ValueError(f"{name} must be between {minimum} and {maximum}.")
+    return value
+
+
+def run_comparison(
+    video_name: str,
+    input_path: Path,
+    checkpoint: Path,
+    window_size: int,
+    threshold: float,
+    job_id: str | None = None,
+) -> dict[str, Any]:
     command = [
         pipeline_python(),
         "scripts/run_baseline_vs_marsp_compare.py",
@@ -157,6 +190,10 @@ def run_comparison(video_name: str, input_path: Path, checkpoint: Path, job_id: 
         str(input_path),
         "--checkpoint",
         str(checkpoint),
+        "--window-size",
+        str(window_size),
+        "--threshold",
+        str(threshold),
     ]
 
     env = os.environ.copy()
@@ -203,6 +240,8 @@ def build_case_response(
     case_name: str,
     input_path: Path,
     uploaded_at: str,
+    window_size: int,
+    threshold: float,
     metrics: dict[str, Any],
 ) -> dict[str, Any]:
     artifacts = metrics.get("artifacts", {})
@@ -219,6 +258,8 @@ def build_case_response(
         "status": "completed",
         "createdAt": uploaded_at,
         "updatedAt": utc_now(),
+        "windowSize": window_size,
+        "threshold": threshold,
         "videoUrl": public_artifact_url_from_base(base_url, input_path),
         "comparisonVideoUrl": public_artifact_url_from_base(base_url, side_by_side),
         "overlayUrl": public_artifact_url_from_base(base_url, side_by_side),
@@ -242,6 +283,8 @@ def process_comparison_job(
     case_name: str,
     input_path: Path,
     checkpoint: Path,
+    window_size: int,
+    threshold: float,
     uploaded_at: str,
     base_url: str,
 ) -> None:
@@ -252,8 +295,8 @@ def process_comparison_job(
             currentStage="baseline_segmentation",
             currentTask="Queued baseline SegFormer inference",
         )
-        metrics = run_comparison(video_name, input_path, checkpoint, job_id=job_id)
-        response = build_case_response(base_url, video_name, case_name, input_path, uploaded_at, metrics)
+        metrics = run_comparison(video_name, input_path, checkpoint, window_size, threshold, job_id=job_id)
+        response = build_case_response(base_url, video_name, case_name, input_path, uploaded_at, window_size, threshold, metrics)
         set_job_status(
             job_id,
             status="completed",
@@ -363,6 +406,12 @@ class SurfWatchHandler(BaseHTTPRequestHandler):
         checkpoint = Path(checkpoint_value).expanduser() if checkpoint_value else DEFAULT_CHECKPOINT
         if not checkpoint.is_absolute():
             checkpoint = ROOT / checkpoint
+        try:
+            window_size = parse_int_field(form, "windowSize", default=5, minimum=1, maximum=31)
+            threshold = parse_float_field(form, "threshold", default=0.5, minimum=0.0, maximum=1.0)
+        except ValueError as exc:
+            self.send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+            return
 
         host = self.headers.get("Host", "127.0.0.1:8000")
         scheme = self.headers.get("X-Forwarded-Proto", "http")
@@ -376,6 +425,8 @@ class SurfWatchHandler(BaseHTTPRequestHandler):
                 "status": "processing",
                 "currentStage": "frame_extraction",
                 "currentTask": "Saving uploaded video for processing",
+                "windowSize": window_size,
+                "threshold": threshold,
                 "createdAt": uploaded_at,
                 "updatedAt": uploaded_at,
             }
@@ -388,6 +439,8 @@ class SurfWatchHandler(BaseHTTPRequestHandler):
                 Path(field.filename).name,
                 input_path,
                 checkpoint,
+                window_size,
+                threshold,
                 uploaded_at,
                 base_url,
             ),
@@ -403,6 +456,8 @@ class SurfWatchHandler(BaseHTTPRequestHandler):
                 "status": "processing",
                 "currentStage": "frame_extraction",
                 "currentTask": "Saving uploaded video for processing",
+                "windowSize": window_size,
+                "threshold": threshold,
                 "createdAt": uploaded_at,
                 "updatedAt": uploaded_at,
             },

@@ -4,6 +4,11 @@ import type { CaseResponse, PipelineStage } from '../models/analysis';
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000';
 const POLL_INTERVAL_MS = 1000;
 
+export interface ComparisonRunOptions {
+  windowSize: number;
+  threshold: number;
+}
+
 function wait(ms: number) {
   return new Promise<void>(resolve => setTimeout(resolve, ms));
 }
@@ -19,11 +24,14 @@ interface ComparisonJobStatus {
 
 export async function runBaselineMarspComparison(
   uploadFile: UploadFile,
+  options: ComparisonRunOptions,
   onStageChange: (stage: PipelineStage) => void,
   onTaskChange?: (task: string) => void,
 ): Promise<CaseResponse> {
   const form = new FormData();
   form.append('file', uploadFile.file);
+  form.append('windowSize', String(options.windowSize));
+  form.append('threshold', String(options.threshold));
 
   onStageChange('upload');
   onTaskChange?.('Uploading video to the local comparison API');

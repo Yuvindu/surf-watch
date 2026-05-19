@@ -1,4 +1,4 @@
-import { useContext, useRef } from 'react';
+import { useContext, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
@@ -7,6 +7,8 @@ import Alert from '@mui/material/Alert';
 import Paper from '@mui/material/Paper';
 import Chip from '@mui/material/Chip';
 import Divider from '@mui/material/Divider';
+import Slider from '@mui/material/Slider';
+import TextField from '@mui/material/TextField';
 import DeleteIcon from '@mui/icons-material/Delete';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import FileUploader from '../components/FileUploader';
@@ -24,6 +26,8 @@ export default function AnalysePage() {
   const { status, currentStage, currentTask, result, caseResponse, error: analysisError, runPrediction, runComparison, reset } = useDemoPredict();
   const { addCase, updateCase } = useContext(AnalysisContext);
   const caseIdRef = useRef<string | null>(null);
+  const [windowSize, setWindowSize] = useState(5);
+  const [threshold, setThreshold] = useState(0.5);
 
   const isProcessing = status === 'processing';
   const isComplete = status === 'complete';
@@ -43,7 +47,7 @@ export default function AnalysePage() {
       createdAt: new Date().toISOString(),
     });
     if (uploadFile.fileType === 'video') {
-      const response = await runComparison(uploadFile);
+      const response = await runComparison(uploadFile, { windowSize, threshold });
       if (response && caseIdRef.current) {
         const completedCaseId = caseIdRef.current;
         updateCase(completedCaseId, {
@@ -138,6 +142,48 @@ export default function AnalysePage() {
               </Button>
             </Box>
             <Divider sx={{ mb: 2 }} />
+            {uploadFile.fileType === 'video' && (
+              <Box sx={{ mb: 2 }}>
+                <Typography variant="subtitle2" fontWeight={700} mb={1}>
+                  Comparison parameters
+                </Typography>
+                <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' } }}>
+                  <Box>
+                    <Typography variant="caption" color="text.secondary" display="block" mb={0.5}>
+                      Window size
+                    </Typography>
+                    <TextField
+                      type="number"
+                      size="small"
+                      fullWidth
+                      value={windowSize}
+                      inputProps={{ min: 1, max: 31, step: 1 }}
+                      onChange={(event) => {
+                        const value = Number(event.target.value);
+                        if (Number.isFinite(value)) {
+                          setWindowSize(Math.min(31, Math.max(1, Math.round(value))));
+                        }
+                      }}
+                    />
+                  </Box>
+                  <Box>
+                    <Typography variant="caption" color="text.secondary" display="block" mb={0.5}>
+                      Threshold: {threshold.toFixed(2)}
+                    </Typography>
+                    <Slider
+                      value={threshold}
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      valueLabelDisplay="auto"
+                      onChange={(_event, value) => {
+                        if (typeof value === 'number') setThreshold(value);
+                      }}
+                    />
+                  </Box>
+                </Box>
+              </Box>
+            )}
             <Button
               variant="contained"
               fullWidth

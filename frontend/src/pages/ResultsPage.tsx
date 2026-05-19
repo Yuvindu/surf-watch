@@ -48,6 +48,8 @@ export default function ResultsPage() {
     baselineOverlayUrl,
     marspOverlayUrl,
     metricTable,
+    windowSize,
+    threshold,
   } = analysisCase;
 
   // Use backend-provided confidence if available, otherwise fall back to mock prediction
@@ -177,6 +179,24 @@ export default function ResultsPage() {
                     <Typography variant="subtitle2" fontWeight={700}>{summaryLabel}</Typography>
                   </Box>
                 </Box>
+              )}
+
+              {/* Frame-level stats — only available with local mock data */}
+              {(windowSize !== undefined || threshold !== undefined) && (
+                <>
+                  <Divider sx={{ my: 2 }} />
+                  <Typography variant="caption" color="text.secondary" display="block" mb={1}>
+                    Parameters
+                  </Typography>
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
+                    {windowSize !== undefined && (
+                      <Chip label={`Window ${windowSize}`} size="small" sx={{ fontSize: '0.65rem', height: 20 }} />
+                    )}
+                    {threshold !== undefined && (
+                      <Chip label={`Threshold ${threshold.toFixed(2)}`} size="small" sx={{ fontSize: '0.65rem', height: 20 }} />
+                    )}
+                  </Box>
+                </>
               )}
 
               {/* Frame-level stats — only available with local mock data */}

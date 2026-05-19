@@ -78,17 +78,18 @@ VITE_API_BASE_URL=http://127.0.0.1:8000 npm run dev
 
 1. The user opens the Analyse page in the React app.
 2. The user uploads an `.mp4` or `.webm` video.
-3. `AnalysePage` calls `runComparison` from `frontend/src/hooks/useDemoPredict.ts`.
-4. `runComparison` calls `runBaselineMarspComparison` in `frontend/src/services/comparisonApi.ts`.
-5. The frontend sends a `POST /api/comparisons` request with the uploaded file as `multipart/form-data`.
-6. The backend saves the uploaded file under `outputs/frontend_uploads/`.
-7. The backend starts a comparison job and returns a `jobId`.
-8. The frontend polls `GET /api/comparisons/<jobId>` once per second.
-9. The backend updates `currentStage` and `currentTask` from the actual running subprocess output.
-10. The comparison script runs baseline inference, the MARSP pipeline, overlay rendering, side-by-side video generation, and metric summarisation.
-11. When the job completes, the backend status response includes URLs for the generated comparison artifacts.
-12. The frontend stores the completed response in `AnalysisContext` and routes to the Results page.
-13. The Results page renders the side-by-side comparison video, baseline overlay, MARSP overlay, confidence summary, and metric table.
+3. The user can adjust `window-size` and `threshold` before starting the comparison.
+4. `AnalysePage` calls `runComparison` from `frontend/src/hooks/useDemoPredict.ts`.
+5. `runComparison` calls `runBaselineMarspComparison` in `frontend/src/services/comparisonApi.ts`.
+6. The frontend sends a `POST /api/comparisons` request with the uploaded file and parameters as `multipart/form-data`.
+7. The backend saves the uploaded file under `outputs/frontend_uploads/`.
+8. The backend starts a comparison job and returns a `jobId`.
+9. The frontend polls `GET /api/comparisons/<jobId>` once per second.
+10. The backend updates `currentStage` and `currentTask` from the actual running subprocess output.
+11. The comparison script runs baseline inference, the MARSP pipeline, overlay rendering, side-by-side video generation, and metric summarisation.
+12. When the job completes, the backend status response includes URLs for the generated comparison artifacts.
+13. The frontend stores the completed response in `AnalysisContext` and routes to the Results page.
+14. The Results page renders the side-by-side comparison video, baseline overlay, MARSP overlay, selected parameters, confidence summary, and metric table.
 
 ## Backend API
 
@@ -99,6 +100,8 @@ Request:
 - Content type: `multipart/form-data`
 - File field name: `file`
 - File type: video upload
+- Optional parameter field: `windowSize`, integer from `1` to `31`, default `5`
+- Optional parameter field: `threshold`, number from `0.0` to `1.0`, default `0.5`
 
 Example response:
 
@@ -110,6 +113,8 @@ Example response:
   "status": "processing",
   "currentStage": "frame_extraction",
   "currentTask": "Saving uploaded video for processing",
+  "windowSize": 5,
+  "threshold": 0.5,
   "createdAt": "2026-05-13T10:55:00+00:00",
   "updatedAt": "2026-05-13T10:55:00+00:00"
 }
@@ -129,6 +134,8 @@ Processing response:
   "status": "processing",
   "currentStage": "marsp_segmentation",
   "currentTask": "Running SegFormer inference inside the MARSP pipeline",
+  "windowSize": 5,
+  "threshold": 0.5,
   "createdAt": "2026-05-13T10:55:00+00:00",
   "updatedAt": "2026-05-13T10:57:00+00:00"
 }
@@ -152,6 +159,8 @@ Completed response:
     "status": "completed",
     "createdAt": "2026-05-13T10:55:00+00:00",
     "updatedAt": "2026-05-13T10:58:00+00:00",
+    "windowSize": 5,
+    "threshold": 0.5,
     "videoUrl": "http://127.0.0.1:8000/artifacts/outputs/frontend_uploads/RipVIS-051-1778669621.mp4",
     "comparisonVideoUrl": "http://127.0.0.1:8000/artifacts/outputs/comparisons/RipVIS-051-1778669621_baseline_vs_marsp.mp4",
     "baselineOverlayUrl": "http://127.0.0.1:8000/artifacts/outputs/comparisons/RipVIS-051-1778669621_baseline_overlay.mp4",

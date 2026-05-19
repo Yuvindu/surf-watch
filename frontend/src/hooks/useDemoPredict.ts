@@ -3,7 +3,7 @@ import type { UploadFile } from '../models/upload';
 import type { PredictionResult } from '../models/prediction';
 import type { CaseResponse, PipelineStage, AnalysisStatus } from '../models/analysis';
 import { simulatePrediction } from '../services/mockApi';
-import { runBaselineMarspComparison } from '../services/comparisonApi';
+import { runBaselineMarspComparison, type ComparisonRunOptions } from '../services/comparisonApi';
 
 export function useDemoPredict() {
   const [status, setStatus] = useState<AnalysisStatus>('idle');
@@ -33,14 +33,14 @@ export function useDemoPredict() {
     }
   }, []);
 
-  const runComparison = useCallback(async (uploadFile: UploadFile): Promise<CaseResponse | null> => {
+  const runComparison = useCallback(async (uploadFile: UploadFile, options: ComparisonRunOptions): Promise<CaseResponse | null> => {
     setStatus('processing');
     setResult(null);
     setCaseResponse(null);
     setCurrentTask(null);
     setError(null);
     try {
-      const response = await runBaselineMarspComparison(uploadFile, setCurrentStage, setCurrentTask);
+      const response = await runBaselineMarspComparison(uploadFile, options, setCurrentStage, setCurrentTask);
       setCaseResponse(response);
       setStatus('complete');
       return response;

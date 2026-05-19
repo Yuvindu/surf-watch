@@ -140,7 +140,7 @@ each page should have  a same format made center focused stcuture and use good d
 this is not a website this is a web app so made it feel like that.  no need much website looks
 
 1. **Home page** — ocean-themed hero section with animated wave background. Brief tagline: "ML-powered rip current detection for safer beaches." CTA button → "Start analysis"
-2. **Analyse page** — drag-and-drop or click to upload an image (.jpg, .png) or video (.mp4, .webm). File validation (type + size limit 50MB). Preview shown immediately. Click "Run detection" →
+2. **Analyse page** — drag-and-drop or click to upload an image (.jpg, .png) or video (.mp4, .webm). File validation (type + size limit 50MB). Video uploads expose window-size and threshold controls. Preview shown immediately. Click "Run detection" →
 3. **Processing view** (same page, or modal) — `StatusStepper` shows MARSP stages animating: Upload → Frame extraction → Motion compensation → Segmentation → Temporal aggregation → Complete. Each step shows a small description and a spinner.
 4. **Results page** — displays the uploaded media with a toggleable semi-transparent rip current mask overlay (simulated coloured region). Shows: confidence gauge (circular), region count, pixel coverage %, processing time. For video: a frame scrubber/slider to step through predictions at different timestamps.
 5. **History page** — card grid of past analysis cases from current session. Each card shows thumbnail, date, confidence badge, status chip. Click → opens result detail.
