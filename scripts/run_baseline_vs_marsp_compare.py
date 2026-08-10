@@ -8,6 +8,10 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+sys.path.append(str(Path(__file__).resolve().parents[1]))
+
+from src.models.adapter_factory import SUPPORTED_SEGMENTATION_MODELS
+
 
 def run_command(command: list[str]) -> None:
     print("\n[RUN]", " ".join(command))
@@ -299,6 +303,12 @@ def main() -> None:
     parser.add_argument("--video-name", required=True)
     parser.add_argument("--input", required=True, help="Path to original input video")
     parser.add_argument("--checkpoint", default="checkpoints/best_model.pt")
+    parser.add_argument(
+        "--model",
+        default="segformer",
+        choices=SUPPORTED_SEGMENTATION_MODELS,
+        help="Segmentation model adapter to use",
+    )
     parser.add_argument("--window-size", type=int, default=5)
     parser.add_argument("--threshold", type=float, default=0.5)
     parser.add_argument("--reuse-existing", action="store_true")
@@ -331,11 +341,12 @@ def main() -> None:
         and Path(baseline_mask).exists()
         and Path(baseline_prob).exists()
     ):
-        print("[STAGE] Running baseline SegFormer inference", flush=True)
+        print("[STAGE] Running baseline segmentation adapter", flush=True)
         run_command([
             sys.executable,
             "scripts/run_video_segmentation.py",
             "--input", input_video,
+            "--model", args.model,
             "--checkpoint", args.checkpoint,
             "--output-overlay", baseline_overlay,
             "--output-mask", baseline_mask,
@@ -354,6 +365,7 @@ def main() -> None:
             "scripts/run_marsp_pipeline.py",
             "--video-name", video_name,
             "--input", input_video,
+            "--model", args.model,
             "--checkpoint", args.checkpoint,
             "--window-size", str(args.window_size),
             "--threshold", str(args.threshold),
@@ -389,6 +401,7 @@ def main() -> None:
     combined = {
         "video_name": video_name,
         "input_video": input_video,
+        "segmentation_model": args.model,
         "baseline": baseline_summary,
         "marsp": marsp_summary_metrics,
         "comparison": comparison,

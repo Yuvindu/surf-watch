@@ -100,16 +100,16 @@ def get_job_status(job_id: str) -> dict[str, Any] | None:
 
 
 def task_from_line(line: str, marsp_started: bool) -> tuple[str, str, bool] | None:
-    if "[STAGE] Running baseline SegFormer inference" in line:
-        return ("baseline_segmentation", "Running baseline SegFormer inference on the original video", marsp_started)
+    if "[STAGE] Running baseline segmentation adapter" in line:
+        return ("baseline_segmentation", "Running baseline segmentation on the original video", marsp_started)
     if "[STAGE] Running MARSP motion-aware pipeline" in line:
         return ("motion_compensation", "Starting the MARSP motion-aware pipeline", True)
     if "scripts/run_motion_compensation.py" in line:
         return ("motion_compensation", "Stabilising camera motion across frames", True)
     if "scripts/run_video_segmentation.py" in line:
         if marsp_started:
-            return ("marsp_segmentation", "Running SegFormer inference inside the MARSP pipeline", marsp_started)
-        return ("baseline_segmentation", "Running baseline SegFormer inference on the original video", marsp_started)
+            return ("marsp_segmentation", "Running segmentation adapter inside the MARSP pipeline", marsp_started)
+        return ("baseline_segmentation", "Running baseline segmentation on the original video", marsp_started)
     if "scripts/run_temporal_aggregation.py" in line:
         return ("temporal_aggregation", "Applying temporal aggregation to prediction probabilities", marsp_started)
     if "[STAGE] Rendering MARSP overlay" in line:
@@ -293,7 +293,7 @@ def process_comparison_job(
             job_id,
             status="processing",
             currentStage="baseline_segmentation",
-            currentTask="Queued baseline SegFormer inference",
+            currentTask="Queued baseline segmentation",
         )
         metrics = run_comparison(video_name, input_path, checkpoint, window_size, threshold, job_id=job_id)
         response = build_case_response(base_url, video_name, case_name, input_path, uploaded_at, window_size, threshold, metrics)

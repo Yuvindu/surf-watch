@@ -160,11 +160,12 @@ python scripts/run_motion_compensation.py \
 
 ## Running Video Segmentation Inference
 
-Run frame-level SegFormer inference on a video and save overlay, binary mask, and probability outputs:
+Run frame-level segmentation inference on a video and save overlay, binary mask, and probability outputs:
 
 ```bash
 python scripts/run_video_segmentation.py \
   --input ../RipVIS/train/videos/RipVIS-051.mp4 \
+  --model segformer \
   --checkpoint checkpoints/best_model.pt \
   --output-overlay outputs/video_inference/RipVIS-051_original_overlay.mp4 \
   --output-mask outputs/video_inference/RipVIS-051_original_mask.mp4 \
@@ -196,6 +197,7 @@ Run the full motion-aware SurfWatch pipeline end to end:
 python scripts/run_marsp_pipeline.py \
   --video-name RipVIS-051 \
   --input ../RipVIS/train/videos/RipVIS-051.mp4 \
+  --model segformer \
   --checkpoint checkpoints/best_model.pt \
   --window-size 5 \
   --threshold 0.5
@@ -204,7 +206,7 @@ python scripts/run_marsp_pipeline.py \
 This pipeline currently performs:
 
 1. motion compensation
-2. frame-level SegFormer inference on original and stabilised video
+2. frame-level segmentation inference on original and stabilised video
 3. motion-adaptive temporal aggregation
 4. generation of stage-wise outputs and a pipeline summary JSON
 

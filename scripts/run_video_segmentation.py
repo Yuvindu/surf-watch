@@ -8,7 +8,10 @@ import numpy as np
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from configs.baseline_config import BaselineConfig
-from src.models.segformer_adapter import SegFormerSegmentationAdapter
+from src.models.adapter_factory import (
+    SUPPORTED_SEGMENTATION_MODELS,
+    build_segmentation_adapter,
+)
 from src.training.utils import get_device
 
 
@@ -27,6 +30,12 @@ def main():
     parser.add_argument("--output-overlay", required=True, help="Path to output overlay video")
     parser.add_argument("--output-mask", required=True, help="Path to output mask video")
     parser.add_argument("--output-prob", required=True, help="Path to output probability video")
+    parser.add_argument(
+        "--model",
+        default="segformer",
+        choices=SUPPORTED_SEGMENTATION_MODELS,
+        help="Segmentation model adapter to use",
+    )
     parser.add_argument("--threshold", type=float, default=0.5, help="Threshold for converting rip-current probabilities into a binary mask")
     args = parser.parse_args()
 
@@ -41,7 +50,8 @@ def main():
     Path(args.output_mask).parent.mkdir(parents=True, exist_ok=True)
     Path(args.output_prob).parent.mkdir(parents=True, exist_ok=True)
 
-    adapter = SegFormerSegmentationAdapter(
+    adapter = build_segmentation_adapter(
+        model_name=args.model,
         checkpoint_path=args.checkpoint,
         device=device,
         config=config,

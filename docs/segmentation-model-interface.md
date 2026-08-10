@@ -10,6 +10,8 @@ The first implementation is the existing SegFormer baseline. Future models shoul
 
 Segmentation adapters live under `src/models/` and follow the `SegmentationModelAdapter` protocol in `src/models/segmentation_interface.py`.
 
+Runtime code should create adapters through `build_segmentation_adapter()` in `src/models/adapter_factory.py`. The factory is the central registry for supported segmentation models, so adding a second model should not require branching inside the MARSP or baseline comparison scripts.
+
 Each adapter should provide:
 
 * `metadata()` - returns model name, input size, threshold, device, and output format.
@@ -47,7 +49,7 @@ Mask thresholds must be adapter configuration, not hard-coded inside the model i
 
 Adapters should raise `ValueError` for invalid frame input, invalid probability map shape, and invalid configuration such as non-positive input sizes. Model checkpoint load errors should surface during adapter initialisation so pipeline failures happen before video processing starts.
 
-## Current SegFormer Mapping
+## Current SegFormer Adapter
 
 `src/models/segformer_adapter.py` maps the existing SegFormer workflow into the interface:
 
@@ -57,6 +59,8 @@ Adapters should raise `ValueError` for invalid frame input, invalid probability 
 * BGR frames are resized, converted to RGB, converted to float tensors, and normalised to `[0.0, 1.0]`.
 * The rip-current class probability is read from class index `1`.
 * Probability maps are resized back to the original frame size before thresholding.
+
+The command-line video segmentation runner selects this adapter with `--model segformer`, which is currently the default and only supported model.
 
 ## Verification
 

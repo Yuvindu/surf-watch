@@ -4,6 +4,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+sys.path.append(str(Path(__file__).resolve().parents[1]))
+
+from src.models.adapter_factory import SUPPORTED_SEGMENTATION_MODELS
+
 
 def run_command(command: list[str]) -> None:
     print("\n[RUN]", " ".join(command))
@@ -19,7 +23,13 @@ def main():
     parser.add_argument(
         "--checkpoint",
         default="checkpoints/best_model.pt",
-        help="Path to trained SegFormer checkpoint",
+        help="Path to trained segmentation model checkpoint",
+    )
+    parser.add_argument(
+        "--model",
+        default="segformer",
+        choices=SUPPORTED_SEGMENTATION_MODELS,
+        help="Segmentation model adapter to use",
     )
     parser.add_argument("--window-size", type=int, default=5)
     parser.add_argument("--threshold", type=float, default=0.5)
@@ -81,6 +91,7 @@ def main():
         sys.executable,
         "scripts/run_video_segmentation.py",
         "--input", input_video,
+        "--model", args.model,
         "--checkpoint", checkpoint,
         "--output-overlay", orig_overlay,
         "--output-mask", orig_mask,
@@ -93,6 +104,7 @@ def main():
         sys.executable,
         "scripts/run_video_segmentation.py",
         "--input", stabilised_video,
+        "--model", args.model,
         "--checkpoint", checkpoint,
         "--output-overlay", stab_overlay,
         "--output-mask", stab_mask,
@@ -131,6 +143,7 @@ def main():
     summary = {
         "video_name": video_name,
         "input_video": input_video,
+        "segmentation_model": args.model,
         "checkpoint": checkpoint,
         "window_size": args.window_size,
         "threshold": args.threshold,
