@@ -8,6 +8,10 @@ from torchvision.transforms import InterpolationMode
 from torchvision.transforms import functional as TF
 
 
+IMAGENET_MEAN = (0.485, 0.456, 0.406)
+IMAGENET_STD = (0.229, 0.224, 0.225)
+
+
 class RipVISSemanticDataset(Dataset):
     def __init__(
         self,
@@ -16,13 +20,23 @@ class RipVISSemanticDataset(Dataset):
         split: str,
         image_size=(512, 512),
         return_filename: bool = False,
+        normalize: bool = False,
     ):
+        """
+        normalize: if True, apply ImageNet mean/std normalization after
+            converting to a tensor. The SegFormer baseline expects raw [0,1]
+            tensors (its own HF preprocessor handles normalization internally),
+            so this defaults to False to preserve existing behaviour. Models
+            with ImageNet-pretrained encoders (e.g. the U-Net/ResNet34
+            candidate from SCRUM-74) should set this to True.
+        """
         if split not in {"train", "val"}:
             raise ValueError("split must be 'train' or 'val'")
 
         self.split = split
         self.return_filename = return_filename
         self.image_size = image_size
+        self.normalize = normalize
 
         self.images_dir = (
             Path(ripvis_root) / split / "sampled_images" / "sampled_images" / "images"
@@ -73,6 +87,9 @@ class RipVISSemanticDataset(Dataset):
         )
 
         image = TF.to_tensor(image)
+
+        if self.normalize:
+            image = TF.normalize(image, mean=IMAGENET_MEAN, std=IMAGENET_STD)
 
         mask_np = np.array(mask)
         mask_np = (mask_np > 0).astype(np.uint8)
