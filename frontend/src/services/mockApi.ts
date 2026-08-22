@@ -81,7 +81,7 @@ export const STAGE_DESCRIPTIONS: Record<PipelineStage, string> = {
   upload: 'Transferring file to processing server',
   frame_extraction: 'Decoding video frames for analysis',
   motion_compensation: 'Stabilising camera motion across frames',
-  baseline_segmentation: 'Running baseline SegFormer inference',
+  baseline_segmentation: 'Running the selected model on the original frames',
   segmentation: 'Running ML model to detect rip current regions',
   marsp_segmentation: 'Running model inference in the MARSP pipeline',
   temporal_aggregation: 'Aggregating frame-level predictions over time',

@@ -10,7 +10,7 @@ The first implementation is the existing SegFormer baseline. Future models shoul
 
 Segmentation adapters live under `src/models/` and follow the `SegmentationModelAdapter` protocol in `src/models/segmentation_interface.py`.
 
-Runtime code should create adapters through `build_segmentation_adapter()` in `src/models/adapter_factory.py`. The factory is the central registry for supported segmentation models, so adding a second model should not require branching inside the MARSP or baseline comparison scripts.
+Runtime code should create adapters through `build_segmentation_adapter()` in `src/models/adapter_factory.py`. User-facing model metadata is registered in `src/models/model_registry.py`, so adding a second model should not require branching inside the MARSP, backend, or frontend comparison flows.
 
 Each adapter should provide:
 
@@ -61,6 +61,14 @@ Adapters should raise `ValueError` for invalid frame input, invalid probability 
 * Probability maps are resized back to the original frame size before thresholding.
 
 The command-line video segmentation runner selects this adapter with `--model segformer`, which is currently the default and only supported model.
+
+## Runtime Model Selection
+
+The comparison API exposes `GET /api/models`, returning the default model and every runnable adapter registered by the backend. The Analyse page uses that response to populate its model selector and submits the selected model with `POST /api/comparisons`.
+
+The backend validates the submitted model before starting a job, records it in job and case responses, and passes it to `run_baseline_vs_marsp_compare.py` with `--model`. The comparison script then uses the same adapter for both the baseline and MARSP branches, preserving a fair comparison.
+
+Register a model only when its adapter and compatible trained checkpoint are available. A research candidate should not appear in the runtime registry merely because its architecture is planned.
 
 ## Verification
 
