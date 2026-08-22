@@ -4,7 +4,7 @@
 
 SurfWatch needs a stable contract between segmentation models and the baseline/MARSP video workflows. The contract lets the project keep motion compensation, temporal aggregation, comparison rendering, and metrics code independent from any one model implementation.
 
-The first implementation is the existing SegFormer baseline. Future models should implement the same adapter responsibilities before they are connected to MARSP.
+The first implementation is the existing SegFormer baseline. A second adapter now supports U-Net with a ResNet34 encoder. The U-Net option remains unavailable in the frontend until its trained checkpoint is present.
 
 ## Adapter Contract
 
@@ -60,15 +60,26 @@ Adapters should raise `ValueError` for invalid frame input, invalid probability 
 * The rip-current class probability is read from class index `1`.
 * Probability maps are resized back to the original frame size before thresholding.
 
-The command-line video segmentation runner selects this adapter with `--model segformer`, which is currently the default and only supported model.
+The command-line video segmentation runner selects this adapter with `--model segformer`, which remains the default model.
+
+## U-Net ResNet34 Adapter
+
+`src/models/unet_resnet34_adapter.py` implements the same contract for a U-Net architecture from `segmentation-models-pytorch`:
+
+* The encoder is ResNet34 and the decoder produces one-channel logits.
+* BGR frames are converted to RGB, scaled to `[0.0, 1.0]`, and normalised with ImageNet mean and standard deviation.
+* A sigmoid converts logits into rip-current probabilities before source-size restoration and thresholding.
+* Inference constructs the architecture without downloading encoder weights because the trained checkpoint must contain the complete `model_state_dict`.
+
+Select the adapter from the CLI with `--model unet-resnet34` and provide a compatible checkpoint using `--checkpoint`. The adapter and runtime integration are complete; training and creation of `checkpoints/unet_resnet34_best_model.pt` are intentionally deferred.
 
 ## Runtime Model Selection
 
-The comparison API exposes `GET /api/models`, returning the default model and every runnable adapter registered by the backend. The Analyse page uses that response to populate its model selector and submits the selected model with `POST /api/comparisons`.
+The comparison API exposes `GET /api/models`, returning the default model and registered adapters. Each entry has an `available` flag based on whether its default checkpoint exists. The Analyse page disables unavailable models and submits the selected model with `POST /api/comparisons`.
 
 The backend validates the submitted model before starting a job, records it in job and case responses, and passes it to `run_baseline_vs_marsp_compare.py` with `--model`. The comparison script then uses the same adapter for both the baseline and MARSP branches, preserving a fair comparison.
 
-Register a model only when its adapter and compatible trained checkpoint are available. A research candidate should not appear in the runtime registry merely because its architecture is planned.
+An adapter can be registered before training is complete, but it must not be runnable from the frontend until its compatible checkpoint is available.
 
 ## Verification
 

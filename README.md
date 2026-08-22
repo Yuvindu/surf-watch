@@ -173,6 +173,21 @@ python scripts/run_video_segmentation.py \
   --threshold 0.5
 ```
 
+The model-agnostic interface also supports U-Net with a ResNet34 encoder:
+
+```bash
+python scripts/run_video_segmentation.py \
+  --input ../RipVIS/train/videos/RipVIS-051.mp4 \
+  --model unet-resnet34 \
+  --checkpoint checkpoints/unet_resnet34_best_model.pt \
+  --output-overlay outputs/video_inference/RipVIS-051_unet_overlay.mp4 \
+  --output-mask outputs/video_inference/RipVIS-051_unet_mask.mp4 \
+  --output-prob outputs/video_inference/RipVIS-051_unet_prob.mp4 \
+  --threshold 0.5
+```
+
+The U-Net adapter is implemented, but training and checkpoint creation are deferred. Until `checkpoints/unet_resnet34_best_model.pt` exists, the Analyse page shows U-Net as unavailable.
+
 ## Running Temporal Aggregation
 
 Run temporal aggregation over a probability video:

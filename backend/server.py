@@ -27,7 +27,6 @@ from src.models.model_registry import (
 ROOT = Path(__file__).resolve().parents[1]
 UPLOAD_DIR = ROOT / "outputs" / "frontend_uploads"
 COMPARISON_DIR = ROOT / "outputs" / "comparisons"
-DEFAULT_CHECKPOINT = ROOT / "checkpoints" / "best_model.pt"
 MAX_UPLOAD_BYTES = 1024**3
 VENV_PYTHON = ROOT / ".venv" / "bin" / "python"
 JOBS: dict[str, dict[str, Any]] = {}
@@ -183,6 +182,23 @@ def parse_model_field(form: cgi.FieldStorage) -> str:
     raw_value = form.getfirst("model")
     model_name = str(raw_value) if raw_value not in (None, "") else DEFAULT_SEGMENTATION_MODEL
     return get_segmentation_model_option(model_name).id
+
+
+def default_checkpoint_for_model(model_name: str) -> Path:
+    option = get_segmentation_model_option(model_name)
+    return ROOT / option.default_checkpoint
+
+
+def segmentation_models_response() -> dict[str, Any]:
+    payload_by_id = {
+        option["id"]: option for option in segmentation_model_options_payload()
+    }
+    for model_name, payload in payload_by_id.items():
+        payload["available"] = default_checkpoint_for_model(model_name).is_file()
+    return {
+        "defaultModel": DEFAULT_SEGMENTATION_MODEL,
+        "models": list(payload_by_id.values()),
+    }
 
 
 def build_comparison_command(
@@ -390,12 +406,7 @@ class SurfWatchHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
         if parsed.path == "/api/models":
-            self.send_json(
-                {
-                    "defaultModel": DEFAULT_SEGMENTATION_MODEL,
-                    "models": segmentation_model_options_payload(),
-                }
-            )
+            self.send_json(segmentation_models_response())
             return
         if parsed.path.startswith("/api/comparisons/"):
             self.get_comparison_status(parsed.path.removeprefix("/api/comparisons/"))
@@ -453,10 +464,6 @@ class SurfWatchHandler(BaseHTTPRequestHandler):
             return
 
         params = parse_qs(query)
-        checkpoint_value = params.get("checkpoint", [None])[0]
-        checkpoint = Path(checkpoint_value).expanduser() if checkpoint_value else DEFAULT_CHECKPOINT
-        if not checkpoint.is_absolute():
-            checkpoint = ROOT / checkpoint
         try:
             model_name = parse_model_field(form)
             window_size = parse_int_field(form, "windowSize", default=5, minimum=1, maximum=31)
@@ -464,6 +471,15 @@ class SurfWatchHandler(BaseHTTPRequestHandler):
         except ValueError as exc:
             self.send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
+
+        checkpoint_value = params.get("checkpoint", [None])[0]
+        checkpoint = (
+            Path(checkpoint_value).expanduser()
+            if checkpoint_value
+            else default_checkpoint_for_model(model_name)
+        )
+        if not checkpoint.is_absolute():
+            checkpoint = ROOT / checkpoint
 
         UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
         COMPARISON_DIR.mkdir(parents=True, exist_ok=True)

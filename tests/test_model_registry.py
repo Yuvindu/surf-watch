@@ -23,6 +23,10 @@ class ModelRegistryTests(unittest.TestCase):
     def test_payload_contains_frontend_metadata(self) -> None:
         payload = segmentation_model_options_payload()
         self.assertEqual(payload[0]["id"], DEFAULT_SEGMENTATION_MODEL)
+        self.assertEqual(
+            {option["id"] for option in payload},
+            {"segformer", "unet-resnet34"},
+        )
         self.assertTrue(payload[0]["label"])
         self.assertTrue(payload[0]["description"])
 

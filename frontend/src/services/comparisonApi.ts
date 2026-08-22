@@ -14,6 +14,7 @@ export interface SegmentationModelOption {
   id: string;
   label: string;
   description: string;
+  available: boolean;
 }
 
 interface SegmentationModelsResponse {

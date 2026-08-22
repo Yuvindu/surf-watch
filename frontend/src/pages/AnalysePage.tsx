@@ -198,8 +198,8 @@ export default function AnalysePage() {
                       onChange={(event) => setModel(event.target.value)}
                     >
                       {modelOptions.map(option => (
-                        <MenuItem key={option.id} value={option.id}>
-                          {option.label}
+                        <MenuItem key={option.id} value={option.id} disabled={!option.available}>
+                          {option.label}{option.available ? '' : ' (checkpoint required)'}
                         </MenuItem>
                       ))}
                     </TextField>
@@ -245,7 +245,10 @@ export default function AnalysePage() {
               fullWidth
               startIcon={<PlayArrowIcon />}
               onClick={handleRun}
-              disabled={uploadFile.fileType === 'video' && modelOptions.length === 0}
+              disabled={
+                uploadFile.fileType === 'video'
+                && !modelOptions.some(option => option.id === model && option.available)
+              }
             >
               {uploadFile.fileType === 'video' ? 'Run Baseline vs MARSP Comparison' : 'Run Detection'}
             </Button>

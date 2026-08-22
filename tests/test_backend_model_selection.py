@@ -1,8 +1,14 @@
 import unittest
 from pathlib import Path
 from typing import Optional
+from unittest.mock import patch
 
-from backend.server import build_comparison_command, parse_model_field
+from backend.server import (
+    build_comparison_command,
+    default_checkpoint_for_model,
+    parse_model_field,
+    segmentation_models_response,
+)
 
 
 class StubForm:
@@ -36,6 +42,18 @@ class BackendModelSelectionTests(unittest.TestCase):
 
         model_flag = command.index("--model")
         self.assertEqual(command[model_flag + 1], "segformer")
+
+    def test_unet_uses_its_own_default_checkpoint(self) -> None:
+        checkpoint = default_checkpoint_for_model("unet-resnet34")
+
+        self.assertEqual(checkpoint.name, "unet_resnet34_best_model.pt")
+
+    @patch("backend.server.Path.is_file", return_value=False)
+    def test_api_marks_models_without_checkpoints_unavailable(self, _) -> None:
+        response = segmentation_models_response()
+
+        self.assertTrue(response["models"])
+        self.assertTrue(all(not model["available"] for model in response["models"]))
 
 
 if __name__ == "__main__":

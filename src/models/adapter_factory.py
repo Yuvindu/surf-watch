@@ -5,10 +5,12 @@ from src.models.model_registry import (
 )
 from src.models.segformer_adapter import SegFormerSegmentationAdapter
 from src.models.segmentation_interface import SegmentationModelAdapter
+from src.models.unet_resnet34_adapter import UnetResNet34SegmentationAdapter
 
 
 _ADAPTER_BUILDERS = {
     "segformer": SegFormerSegmentationAdapter,
+    "unet-resnet34": UnetResNet34SegmentationAdapter,
 }
 
 
