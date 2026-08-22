@@ -1,0 +1,54 @@
+# Node / Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/coverage/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.venv/
+venv/
+env/
+ENV/
+pip-wheel-metadata/
+.pytest_cache/
+.mypy_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Build / logs
+build/
+dist/
+*.log
+
+# Dataset / experiment data
+/data/
+/data/processed/
+/data/raw/
+
+# Model outputs / checkpoints
+checkpoints/
+/models/
+!src/models/
+!src/models/**
+outputs/
+runs/
+results/
+
+# Environment files
+.env
+.env.*
+
+# Temporary files
+*.tmp
+*.temp
