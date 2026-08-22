@@ -17,11 +17,16 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
+from src.models.model_registry import (
+    DEFAULT_SEGMENTATION_MODEL,
+    get_segmentation_model_option,
+    segmentation_model_options_payload,
+)
+
 
 ROOT = Path(__file__).resolve().parents[1]
 UPLOAD_DIR = ROOT / "outputs" / "frontend_uploads"
 COMPARISON_DIR = ROOT / "outputs" / "comparisons"
-DEFAULT_CHECKPOINT = ROOT / "checkpoints" / "best_model.pt"
 MAX_UPLOAD_BYTES = 1024**3
 VENV_PYTHON = ROOT / ".venv" / "bin" / "python"
 JOBS: dict[str, dict[str, Any]] = {}
@@ -100,16 +105,16 @@ def get_job_status(job_id: str) -> dict[str, Any] | None:
 
 
 def task_from_line(line: str, marsp_started: bool) -> tuple[str, str, bool] | None:
-    if "[STAGE] Running baseline SegFormer inference" in line:
-        return ("baseline_segmentation", "Running baseline SegFormer inference on the original video", marsp_started)
+    if "[STAGE] Running baseline segmentation adapter" in line:
+        return ("baseline_segmentation", "Running baseline segmentation on the original video", marsp_started)
     if "[STAGE] Running MARSP motion-aware pipeline" in line:
         return ("motion_compensation", "Starting the MARSP motion-aware pipeline", True)
     if "scripts/run_motion_compensation.py" in line:
         return ("motion_compensation", "Stabilising camera motion across frames", True)
     if "scripts/run_video_segmentation.py" in line:
         if marsp_started:
-            return ("marsp_segmentation", "Running SegFormer inference inside the MARSP pipeline", marsp_started)
-        return ("baseline_segmentation", "Running baseline SegFormer inference on the original video", marsp_started)
+            return ("marsp_segmentation", "Running segmentation adapter inside the MARSP pipeline", marsp_started)
+        return ("baseline_segmentation", "Running baseline segmentation on the original video", marsp_started)
     if "scripts/run_temporal_aggregation.py" in line:
         return ("temporal_aggregation", "Applying temporal aggregation to prediction probabilities", marsp_started)
     if "[STAGE] Rendering MARSP overlay" in line:
@@ -173,15 +178,38 @@ def parse_float_field(form: cgi.FieldStorage, name: str, default: float, minimum
     return value
 
 
-def run_comparison(
+def parse_model_field(form: cgi.FieldStorage) -> str:
+    raw_value = form.getfirst("model")
+    model_name = str(raw_value) if raw_value not in (None, "") else DEFAULT_SEGMENTATION_MODEL
+    return get_segmentation_model_option(model_name).id
+
+
+def default_checkpoint_for_model(model_name: str) -> Path:
+    option = get_segmentation_model_option(model_name)
+    return ROOT / option.default_checkpoint
+
+
+def segmentation_models_response() -> dict[str, Any]:
+    payload_by_id = {
+        option["id"]: option for option in segmentation_model_options_payload()
+    }
+    for model_name, payload in payload_by_id.items():
+        payload["available"] = default_checkpoint_for_model(model_name).is_file()
+    return {
+        "defaultModel": DEFAULT_SEGMENTATION_MODEL,
+        "models": list(payload_by_id.values()),
+    }
+
+
+def build_comparison_command(
     video_name: str,
     input_path: Path,
     checkpoint: Path,
+    model_name: str,
     window_size: int,
     threshold: float,
-    job_id: str | None = None,
-) -> dict[str, Any]:
-    command = [
+) -> list[str]:
+    return [
         pipeline_python(),
         "scripts/run_baseline_vs_marsp_compare.py",
         "--video-name",
@@ -190,11 +218,32 @@ def run_comparison(
         str(input_path),
         "--checkpoint",
         str(checkpoint),
+        "--model",
+        model_name,
         "--window-size",
         str(window_size),
         "--threshold",
         str(threshold),
     ]
+
+
+def run_comparison(
+    video_name: str,
+    input_path: Path,
+    checkpoint: Path,
+    model_name: str,
+    window_size: int,
+    threshold: float,
+    job_id: str | None = None,
+) -> dict[str, Any]:
+    command = build_comparison_command(
+        video_name,
+        input_path,
+        checkpoint,
+        model_name,
+        window_size,
+        threshold,
+    )
 
     env = os.environ.copy()
     env["PYTHONUNBUFFERED"] = "1"
@@ -240,6 +289,7 @@ def build_case_response(
     case_name: str,
     input_path: Path,
     uploaded_at: str,
+    model_name: str,
     window_size: int,
     threshold: float,
     metrics: dict[str, Any],
@@ -258,6 +308,7 @@ def build_case_response(
         "status": "completed",
         "createdAt": uploaded_at,
         "updatedAt": utc_now(),
+        "model": model_name,
         "windowSize": window_size,
         "threshold": threshold,
         "videoUrl": public_artifact_url_from_base(base_url, input_path),
@@ -283,6 +334,7 @@ def process_comparison_job(
     case_name: str,
     input_path: Path,
     checkpoint: Path,
+    model_name: str,
     window_size: int,
     threshold: float,
     uploaded_at: str,
@@ -293,10 +345,28 @@ def process_comparison_job(
             job_id,
             status="processing",
             currentStage="baseline_segmentation",
-            currentTask="Queued baseline SegFormer inference",
+            currentTask="Queued baseline segmentation",
         )
-        metrics = run_comparison(video_name, input_path, checkpoint, window_size, threshold, job_id=job_id)
-        response = build_case_response(base_url, video_name, case_name, input_path, uploaded_at, window_size, threshold, metrics)
+        metrics = run_comparison(
+            video_name,
+            input_path,
+            checkpoint,
+            model_name,
+            window_size,
+            threshold,
+            job_id=job_id,
+        )
+        response = build_case_response(
+            base_url,
+            video_name,
+            case_name,
+            input_path,
+            uploaded_at,
+            model_name,
+            window_size,
+            threshold,
+            metrics,
+        )
         set_job_status(
             job_id,
             status="completed",
@@ -335,6 +405,9 @@ class SurfWatchHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
+        if parsed.path == "/api/models":
+            self.send_json(segmentation_models_response())
+            return
         if parsed.path.startswith("/api/comparisons/"):
             self.get_comparison_status(parsed.path.removeprefix("/api/comparisons/"))
             return
@@ -390,6 +463,24 @@ class SurfWatchHandler(BaseHTTPRequestHandler):
             )
             return
 
+        params = parse_qs(query)
+        try:
+            model_name = parse_model_field(form)
+            window_size = parse_int_field(form, "windowSize", default=5, minimum=1, maximum=31)
+            threshold = parse_float_field(form, "threshold", default=0.5, minimum=0.0, maximum=1.0)
+        except ValueError as exc:
+            self.send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+            return
+
+        checkpoint_value = params.get("checkpoint", [None])[0]
+        checkpoint = (
+            Path(checkpoint_value).expanduser()
+            if checkpoint_value
+            else default_checkpoint_for_model(model_name)
+        )
+        if not checkpoint.is_absolute():
+            checkpoint = ROOT / checkpoint
+
         UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
         COMPARISON_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -400,18 +491,6 @@ class SurfWatchHandler(BaseHTTPRequestHandler):
 
         with input_path.open("wb") as handle:
             shutil.copyfileobj(field.file, handle)
-
-        params = parse_qs(query)
-        checkpoint_value = params.get("checkpoint", [None])[0]
-        checkpoint = Path(checkpoint_value).expanduser() if checkpoint_value else DEFAULT_CHECKPOINT
-        if not checkpoint.is_absolute():
-            checkpoint = ROOT / checkpoint
-        try:
-            window_size = parse_int_field(form, "windowSize", default=5, minimum=1, maximum=31)
-            threshold = parse_float_field(form, "threshold", default=0.5, minimum=0.0, maximum=1.0)
-        except ValueError as exc:
-            self.send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
-            return
 
         host = self.headers.get("Host", "127.0.0.1:8000")
         scheme = self.headers.get("X-Forwarded-Proto", "http")
@@ -425,6 +504,7 @@ class SurfWatchHandler(BaseHTTPRequestHandler):
                 "status": "processing",
                 "currentStage": "frame_extraction",
                 "currentTask": "Saving uploaded video for processing",
+                "model": model_name,
                 "windowSize": window_size,
                 "threshold": threshold,
                 "createdAt": uploaded_at,
@@ -439,6 +519,7 @@ class SurfWatchHandler(BaseHTTPRequestHandler):
                 Path(field.filename).name,
                 input_path,
                 checkpoint,
+                model_name,
                 window_size,
                 threshold,
                 uploaded_at,
@@ -456,6 +537,7 @@ class SurfWatchHandler(BaseHTTPRequestHandler):
                 "status": "processing",
                 "currentStage": "frame_extraction",
                 "currentTask": "Saving uploaded video for processing",
+                "model": model_name,
                 "windowSize": window_size,
                 "threshold": threshold,
                 "createdAt": uploaded_at,
