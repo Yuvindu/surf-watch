@@ -146,6 +146,23 @@ This produces:
 - checkpoints under `checkpoints/`
 - prediction comparison outputs under `outputs/predictions/`
 
+## U-Net ResNet34 Training
+
+Train the second segmentation model with the matched RipVIS protocol:
+
+```bash
+python scripts/train_unet_resnet34.py \
+  --ripvis-root ../RipVIS \
+  --processed-root data/processed \
+  --image-size 512 \
+  --batch-size 4 \
+  --epochs 20 \
+  --encoder-weights imagenet \
+  --seed 42
+```
+
+The run selects `checkpoints/unet_resnet34_best_model.pt` by validation IoU and records its full configuration, metric history, runtime, and adapter smoke check in `checkpoints/unet_resnet34_training_manifest.json`. See [docs/unet-resnet34-training.md](/Users/rashmikecaldera/Developer/curtin/CSP/surfwatch/docs/unet-resnet34-training.md) for the cloud and smoke-run workflows.
+
 ## Running Motion Compensation
 
 Run the feature-based partial affine motion compensation prototype on a sample video:
@@ -186,7 +203,7 @@ python scripts/run_video_segmentation.py \
   --threshold 0.5
 ```
 
-The U-Net adapter is implemented, but training and checkpoint creation are deferred. Until `checkpoints/unet_resnet34_best_model.pt` exists, the Analyse page shows U-Net as unavailable.
+Until a full run produces `checkpoints/unet_resnet34_best_model.pt`, the Analyse page shows U-Net as unavailable.
 
 ## Running Temporal Aggregation
 
