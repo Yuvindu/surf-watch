@@ -1,15 +1,3 @@
-# Cloud Training Path Setup
-
-## Purpose
-This note records the expected dataset and project paths for running SurfWatch training on a cloud GPU environment such as RunPod.
-
-## Expected folder layout
-A simple recommended layout is:
-
-```text
-/workspace/
-  surfwatch/
-  RipVIS/
 # Cloud Training Setup
 
 ## Overview
@@ -76,3 +64,25 @@ python scripts/train_baseline.py
 - Keep the raw RipVIS dataset outside the main SurfWatch repository to avoid mixing source data with project code.
 - Store checkpoints and prediction outputs inside the SurfWatch project directory so they remain grouped with the corresponding experiment setup.
 - Use distinct output folders for each cloud experiment to keep runs easy to compare and review.
+
+## Validated RunPod Configuration
+
+The U-Net ResNet34 cloud run on 2 September 2026 used:
+
+- one NVIDIA RTX 4090 with 24 GB VRAM
+- CUDA 12.8 and PyTorch 2.8.0
+- 16 vCPUs and 61 GB RAM
+- a 50 GB persistent network volume mounted at `/workspace`
+- a project virtual environment at `/workspace/surfwatch/.venv`
+
+The run used batch size 4 and four dataloader workers. It sustained high GPU utilisation and completed 20 epochs over 14,616 training and 4,349 validation frames in 55 minutes 25 seconds.
+
+When a dataset upload is interrupted, resume it with checksum verification rather than file-size matching alone. A partial transfer can occasionally leave a same-size corrupt file that passes a size-only check.
+
+```bash
+rsync -rc --partial -e "ssh -p PORT -i ~/.ssh/id_ed25519" \
+  /local/path/images \
+  root@RUNPOD_HOST:/workspace/RipVIS/train/sampled_images/sampled_images/
+```
+
+Before terminating a paid pod, copy the best and last checkpoints, manifest, prediction samples, and training log back to local storage. Stopping the pod ends active GPU charges; the network volume remains persistent and separately billed until deleted.

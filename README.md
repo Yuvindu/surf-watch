@@ -42,6 +42,7 @@ The repo currently records a few key decisions that shape the project:
 - RipVIS instance annotations are converted into binary semantic segmentation masks for SurfWatch
 - local quantitative evaluation uses the validation split because the public test split does not include local labels
 - baseline training uses SegFormer for binary rip-current segmentation
+- U-Net ResNet34 is the second trained segmentation model; its best checkpoint is selected by validation IoU
 - MARSP work extends the baseline with motion compensation and temporal aggregation
 
 See [docs/decision-log.md](/Users/rashmikecaldera/Developer/curtin/CSP/surfwatch/docs/decision-log.md) for the running decision history.
@@ -161,7 +162,9 @@ python scripts/train_unet_resnet34.py \
   --seed 42
 ```
 
-The run selects `checkpoints/unet_resnet34_best_model.pt` by validation IoU and records its full configuration, metric history, runtime, and adapter smoke check in `checkpoints/unet_resnet34_training_manifest.json`. See [docs/unet-resnet34-training.md](/Users/rashmikecaldera/Developer/curtin/CSP/surfwatch/docs/unet-resnet34-training.md) for the cloud and smoke-run workflows.
+The completed RTX 4090 run selected epoch 10 by validation IoU. Its best validation metrics were IoU `0.7407`, Dice `0.8311`, precision `0.9034`, and recall `0.7828`. The compatible runtime checkpoint is stored at `checkpoints/unet_resnet34_best_model.pt`.
+
+The training pipeline records its full configuration, metric history, runtime, environment, and adapter smoke check in `unet_resnet34_training_manifest.json`. See [docs/unet-resnet34-training.md](/Users/rashmikecaldera/Developer/curtin/CSP/surfwatch/docs/unet-resnet34-training.md) for reproduction instructions and [docs/experiments/unet_resnet34_cloud_run_01.md](/Users/rashmikecaldera/Developer/curtin/CSP/surfwatch/docs/experiments/unet_resnet34_cloud_run_01.md) for the completed experiment.
 
 ## Running Motion Compensation
 
@@ -203,7 +206,7 @@ python scripts/run_video_segmentation.py \
   --threshold 0.5
 ```
 
-Until a full run produces `checkpoints/unet_resnet34_best_model.pt`, the Analyse page shows U-Net as unavailable.
+The trained checkpoint at `checkpoints/unet_resnet34_best_model.pt` makes U-Net available through the Analyse page and the shared baseline/MARSP comparison flow. If that ignored local artifact is absent on another machine, the model registry reports U-Net as unavailable until the checkpoint is restored.
 
 ## Running Temporal Aggregation
 
@@ -333,8 +336,9 @@ See [docs/frontend-backend-comparison-flow.md](/Users/rashmikecaldera/Developer/
 SurfWatch now has:
 
 - a working semantic segmentation dataset pipeline
-- a trained SegFormer baseline
+- trained SegFormer-B0 and U-Net ResNet34 models
+- a model-agnostic segmentation interface with adapters for both models
 - motion compensation and temporal aggregation prototypes
 - an integrated MARSP pipeline runner for end-to-end experimentation
 
-The next stage of the project is to consolidate the baseline and MARSP comparison workflow, review trade-offs between stability gains and added pipeline complexity, and prepare the project for final reporting and demonstration.
+The next stage is a matched held-out video evaluation of SegFormer-B0 and U-Net ResNet34, with each model tested both with and without MARSP. Those results will support the multi-model comparison, provenance reporting, and ensemble fusion experiments. DeepLabV3+ is retained as an optional later extension rather than the immediate next training target.

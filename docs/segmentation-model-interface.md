@@ -4,7 +4,7 @@
 
 SurfWatch needs a stable contract between segmentation models and the baseline/MARSP video workflows. The contract lets the project keep motion compensation, temporal aggregation, comparison rendering, and metrics code independent from any one model implementation.
 
-The first implementation is the existing SegFormer baseline. A second adapter now supports U-Net with a ResNet34 encoder. The U-Net option remains unavailable in the frontend until its trained checkpoint is present.
+The first implementation is the existing SegFormer baseline. A second adapter supports the trained U-Net ResNet34 model. Frontend availability is determined at runtime from the presence of each registered model's default checkpoint.
 
 ## Adapter Contract
 
@@ -71,7 +71,7 @@ The command-line video segmentation runner selects this adapter with `--model se
 * A sigmoid converts logits into rip-current probabilities before source-size restoration and thresholding.
 * Inference constructs the architecture without downloading encoder weights because the trained checkpoint must contain the complete `model_state_dict`.
 
-Select the adapter from the CLI with `--model unet-resnet34` and provide a compatible checkpoint using `--checkpoint`. The adapter and runtime integration are complete; training and creation of `checkpoints/unet_resnet34_best_model.pt` are intentionally deferred.
+Select the adapter from the CLI with `--model unet-resnet34` and provide a compatible checkpoint using `--checkpoint`. Full training completed on 2 September 2026, and the selected epoch-10 checkpoint is installed at `checkpoints/unet_resnet34_best_model.pt`. It achieved validation IoU `0.7407` and loaded through the existing adapter without code changes.
 
 ## Runtime Model Selection
 
@@ -79,7 +79,7 @@ The comparison API exposes `GET /api/models`, returning the default model and re
 
 The backend validates the submitted model before starting a job, records it in job and case responses, and passes it to `run_baseline_vs_marsp_compare.py` with `--model`. The comparison script then uses the same adapter for both the baseline and MARSP branches, preserving a fair comparison.
 
-An adapter can be registered before training is complete, but it must not be runnable from the frontend until its compatible checkpoint is available.
+An adapter can be registered before training is complete, but it is not runnable from the frontend until its compatible checkpoint is available. Because generated checkpoints are ignored by Git, a fresh environment must restore `checkpoints/unet_resnet34_best_model.pt` before U-Net is reported as available.
 
 ## Verification
 
