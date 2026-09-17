@@ -208,6 +208,24 @@ python scripts/run_video_segmentation.py \
 
 The trained checkpoint at `checkpoints/unet_resnet34_best_model.pt` makes U-Net available through the Analyse page and the shared baseline/MARSP comparison flow. If that ignored local artifact is absent on another machine, the model registry reports U-Net as unavailable until the checkpoint is restored.
 
+## Held-Out Model Evaluation
+
+Compare registered models against the same labelled RipVIS validation frames:
+
+```bash
+python scripts/evaluate_held_out_models.py \
+  --run-name segformer-unet-val \
+  --ripvis-root ../RipVIS \
+  --processed-root data/processed \
+  --model-checkpoint segformer=checkpoints/best_model.pt \
+  --model-checkpoint unet-resnet34=checkpoints/unet_resnet34_best_model.pt
+```
+
+The evaluator writes dataset-level JSON plus frame- and video-level CSV files,
+including model, checkpoint, dataset, parameter, and code-revision provenance.
+See [docs/held-out-model-evaluation.md](/Users/rashmikecaldera/Developer/curtin/CSP/surfwatch/docs/held-out-model-evaluation.md)
+for metric definitions and experiment rules.
+
 ## Running Temporal Aggregation
 
 Run temporal aggregation over a probability video:
