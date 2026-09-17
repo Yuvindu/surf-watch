@@ -3,10 +3,29 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from typing import Optional
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from src.models.adapter_factory import SUPPORTED_SEGMENTATION_MODELS
+
+
+def resolve_output_directories(output_root: Optional[str]) -> dict:
+    if output_root is None:
+        return {
+            "motion": Path("outputs/motion_compensation"),
+            "inference": Path("outputs/video_inference"),
+            "aggregation": Path("outputs/temporal_aggregation"),
+            "summary": Path("outputs/marsp"),
+        }
+
+    root = Path(output_root).expanduser().resolve()
+    return {
+        "motion": root / "motion_compensation",
+        "inference": root / "video_inference",
+        "aggregation": root / "temporal_aggregation",
+        "summary": root / "summary",
+    }
 
 
 def run_command(command: list[str]) -> None:
@@ -33,16 +52,21 @@ def main():
     )
     parser.add_argument("--window-size", type=int, default=5)
     parser.add_argument("--threshold", type=float, default=0.5)
+    parser.add_argument(
+        "--output-root",
+        help="Optional root for structured MARSP outputs",
+    )
     args = parser.parse_args()
 
     video_name = args.video_name
     input_video = args.input
     checkpoint = args.checkpoint
 
-    motion_dir = Path("outputs/motion_compensation")
-    infer_dir = Path("outputs/video_inference")
-    agg_dir = Path("outputs/temporal_aggregation")
-    marsp_dir = Path("outputs/marsp")
+    output_directories = resolve_output_directories(args.output_root)
+    motion_dir = output_directories["motion"]
+    infer_dir = output_directories["inference"]
+    agg_dir = output_directories["aggregation"]
+    marsp_dir = output_directories["summary"]
 
     motion_dir.mkdir(parents=True, exist_ok=True)
     infer_dir.mkdir(parents=True, exist_ok=True)

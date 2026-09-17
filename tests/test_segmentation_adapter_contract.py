@@ -1,5 +1,6 @@
 import unittest
 from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 import numpy as np
 import torch
@@ -45,6 +46,36 @@ class SegmentationAdapterContractTests(unittest.TestCase):
         probability_map = np.zeros((2, 2, 1), dtype=np.float32)
         with self.assertRaisesRegex(ValueError, "2D array"):
             self.adapter.probability_to_mask(probability_map)
+
+    @patch("src.models.segformer_adapter.torch.load")
+    @patch("src.models.segformer_adapter.build_segformer_model")
+    def test_checkpoint_inference_does_not_load_pretrained_weights(
+        self,
+        build_model,
+        load_checkpoint,
+    ) -> None:
+        model = Mock()
+        model.to.return_value = model
+        build_model.return_value = model
+        load_checkpoint.return_value = {"model_state_dict": {}}
+        config = Mock(
+            image_size=(512, 512),
+            pretrained_model_name="segformer-b0",
+            num_classes=2,
+        )
+
+        SegFormerSegmentationAdapter(
+            checkpoint_path="checkpoint.pt",
+            device=torch.device("cpu"),
+            config=config,
+        )
+
+        build_model.assert_called_once_with(
+            model_name="segformer-b0",
+            num_classes=2,
+            load_pretrained_weights=False,
+        )
+        model.load_state_dict.assert_called_once_with({})
 
 
 if __name__ == "__main__":

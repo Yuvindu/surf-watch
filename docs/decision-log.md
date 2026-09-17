@@ -2,6 +2,7 @@
 
 | Date | Decision | Why | Alternatives considered | Impact | Owner |
 |---|---|---|---|---|---|
+| 2026-09-17 | Scope comparison artifacts by run, model, and workflow | Multi-model experiments need deterministic paths that prevent one adapter from overwriting another and make provenance easy to inspect | Keep shared legacy output directories; manually rename each run; place every artifact in one flat directory | SCRUM-77 writes each adapter to `<run>/<model>/baseline`, `<run>/<model>/marsp`, and `<run>/<model>/comparison`, while preserving legacy paths for existing single-model and frontend calls |  |
 | 2026-09-12 | Evaluate SegFormer-B0 and U-Net ResNet34 before adding DeepLabV3+ | Both trained models have full validation results and show complementary precision/recall behaviour; the immediate research question is whether MARSP generalises across them and whether their outputs can be fused effectively | Train DeepLabV3+ immediately; continue with SegFormer only | SCRUM-76 should run a matched four-way baseline/MARSP evaluation, followed by multi-model comparison and ensemble work; DeepLabV3+ becomes conditional on the evidence from those experiments |  |
 | 2026-03-11 | Use Scrum with 1-week sprints | Iterative delivery + early validation | Waterfall, Spiral | Defines delivery cadence |  |
 | 2026-03-11 | Project name: SurfWatch | Clear and relevant | RipWatch, WaveGuard | Repo/Jira naming |  |

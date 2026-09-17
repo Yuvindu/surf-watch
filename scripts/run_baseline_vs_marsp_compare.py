@@ -387,6 +387,10 @@ def main() -> None:
     parser.add_argument("--window-size", type=int, default=5)
     parser.add_argument("--threshold", type=float, default=0.5)
     parser.add_argument("--reuse-existing", action="store_true")
+    parser.add_argument(
+        "--output-root",
+        help="Optional root for model-scoped baseline, MARSP, and comparison outputs",
+    )
     args = parser.parse_args()
 
     if args.window_size <= 0:
@@ -405,13 +409,35 @@ def main() -> None:
         threshold=args.threshold,
     )
 
-    compare_dir = Path("outputs/comparisons")
+    structured_output_root = None
+    if args.output_root:
+        structured_output_root = Path(args.output_root).expanduser().resolve()
+        baseline_dir = structured_output_root / "baseline"
+        compare_dir = structured_output_root / "comparison"
+        marsp_output_root = structured_output_root / "marsp"
+    else:
+        baseline_dir = Path("outputs/comparisons")
+        compare_dir = baseline_dir
+        marsp_output_root = None
+
+    baseline_dir.mkdir(parents=True, exist_ok=True)
     compare_dir.mkdir(parents=True, exist_ok=True)
 
     # Baseline outputs
-    baseline_overlay = str(compare_dir / f"{video_name}_baseline_overlay.mp4")
-    baseline_mask = str(compare_dir / f"{video_name}_baseline_mask.mp4")
-    baseline_prob = str(compare_dir / f"{video_name}_baseline_prob.mp4")
+    if structured_output_root is None:
+        baseline_overlay = str(
+            baseline_dir / f"{video_name}_baseline_overlay.mp4"
+        )
+        baseline_mask = str(
+            baseline_dir / f"{video_name}_baseline_mask.mp4"
+        )
+        baseline_prob = str(
+            baseline_dir / f"{video_name}_baseline_prob.mp4"
+        )
+    else:
+        baseline_overlay = str(baseline_dir / f"{video_name}_overlay.mp4")
+        baseline_mask = str(baseline_dir / f"{video_name}_mask.mp4")
+        baseline_prob = str(baseline_dir / f"{video_name}_probability.mp4")
 
     # MARSP outputs from main pipeline
     marsp_overlay = str(compare_dir / f"{video_name}_marsp_overlay.mp4")
@@ -436,8 +462,20 @@ def main() -> None:
         )
 
     # Reused MARSP pipeline outputs
-    marsp_final_mask = f"outputs/temporal_aggregation/{video_name}_stabilised_agg_mask.mp4"
-    marsp_summary = f"outputs/marsp/{video_name}_pipeline_summary.json"
+    if marsp_output_root is None:
+        marsp_final_mask = f"outputs/temporal_aggregation/{video_name}_stabilised_agg_mask.mp4"
+        marsp_summary = f"outputs/marsp/{video_name}_pipeline_summary.json"
+    else:
+        marsp_final_mask = str(
+            marsp_output_root
+            / "temporal_aggregation"
+            / f"{video_name}_stabilised_agg_mask.mp4"
+        )
+        marsp_summary = str(
+            marsp_output_root
+            / "summary"
+            / f"{video_name}_pipeline_summary.json"
+        )
 
     # 1. Run baseline inference
     baseline_runtime_seconds = previous_timing.get("baseline")
@@ -470,7 +508,7 @@ def main() -> None:
     ):
         marsp_execution = "executed"
         print("[STAGE] Running MARSP motion-aware pipeline", flush=True)
-        marsp_runtime_seconds = run_command([
+        marsp_command = [
             sys.executable,
             "scripts/run_marsp_pipeline.py",
             "--video-name", video_name,
@@ -479,7 +517,10 @@ def main() -> None:
             "--checkpoint", args.checkpoint,
             "--window-size", str(args.window_size),
             "--threshold", str(args.threshold),
-        ])
+        ]
+        if marsp_output_root is not None:
+            marsp_command.extend(["--output-root", str(marsp_output_root)])
+        marsp_runtime_seconds = run_command(marsp_command)
 
     # 3. Build MARSP overlay on original frames
     print("[STAGE] Rendering MARSP overlay on original frames", flush=True)

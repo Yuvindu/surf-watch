@@ -31,6 +31,7 @@ class SegFormerSegmentationAdapter:
         model = build_segformer_model(
             model_name=self.config.pretrained_model_name,
             num_classes=self.config.num_classes,
+            load_pretrained_weights=False,
         ).to(self.device)
 
         checkpoint = torch.load(self.checkpoint_path, map_location=self.device)
