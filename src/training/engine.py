@@ -14,7 +14,49 @@ from src.training.metrics import (
 from src.training.utils import save_checkpoint
 
 
-def train_one_epoch(model, loader, optimizer, loss_fn, device):
+def forward_segformer_logits(model, images):
+    return model(pixel_values=images).logits
+
+
+def forward_binary_logits(model, images):
+    return model(images)
+
+
+def prepare_multiclass_targets(masks):
+    return masks
+
+
+def prepare_binary_targets(masks):
+    return masks.unsqueeze(1).float()
+
+
+def predict_multiclass(outputs, threshold=0.5):
+    del threshold
+    return torch.argmax(outputs, dim=1)
+
+
+def predict_binary(outputs, threshold=0.5):
+    return (torch.sigmoid(outputs).squeeze(1) >= threshold).long()
+
+
+def _resize_logits(outputs, masks):
+    return torch.nn.functional.interpolate(
+        outputs,
+        size=masks.shape[-2:],
+        mode="bilinear",
+        align_corners=False,
+    )
+
+
+def train_one_epoch(
+    model,
+    loader,
+    optimizer,
+    loss_fn,
+    device,
+    forward_logits=forward_segformer_logits,
+    prepare_targets=prepare_multiclass_targets,
+):
     model.train()
     running_loss = 0.0
 
@@ -24,15 +66,9 @@ def train_one_epoch(model, loader, optimizer, loss_fn, device):
 
         optimizer.zero_grad()
 
-        outputs = model(pixel_values=images).logits
-        outputs = torch.nn.functional.interpolate(
-            outputs,
-            size=masks.shape[-2:],
-            mode="bilinear",
-            align_corners=False,
-        )
+        outputs = _resize_logits(forward_logits(model, images), masks)
 
-        loss = loss_fn(outputs, masks)
+        loss = loss_fn(outputs, prepare_targets(masks))
         loss.backward()
         optimizer.step()
 
@@ -42,7 +78,16 @@ def train_one_epoch(model, loader, optimizer, loss_fn, device):
 
 
 @torch.no_grad()
-def validate(model, loader, loss_fn, device):
+def validate(
+    model,
+    loader,
+    loss_fn,
+    device,
+    forward_logits=forward_segformer_logits,
+    prepare_targets=prepare_multiclass_targets,
+    predict_from_logits=predict_multiclass,
+    threshold=0.5,
+):
     model.eval()
     running_loss = 0.0
     confusion = torch.zeros((2, 2), dtype=torch.int64, device=device)
@@ -51,18 +96,12 @@ def validate(model, loader, loss_fn, device):
         images = images.to(device)
         masks = masks.to(device)
 
-        outputs = model(pixel_values=images).logits
-        outputs = torch.nn.functional.interpolate(
-            outputs,
-            size=masks.shape[-2:],
-            mode="bilinear",
-            align_corners=False,
-        )
+        outputs = _resize_logits(forward_logits(model, images), masks)
 
-        loss = loss_fn(outputs, masks)
+        loss = loss_fn(outputs, prepare_targets(masks))
         running_loss += loss.item()
 
-        preds = torch.argmax(outputs, dim=1)
+        preds = predict_from_logits(outputs, threshold=threshold)
         confusion += compute_confusion(preds, masks, num_classes=2)
 
     mean_iou, _ = iou_score(confusion)
@@ -80,7 +119,17 @@ def validate(model, loader, loss_fn, device):
 
 
 @torch.no_grad()
-def save_sample_predictions(model, loader, device, output_dir, max_samples=4):
+def save_sample_predictions(
+    model,
+    loader,
+    device,
+    output_dir,
+    max_samples=4,
+    forward_logits=forward_segformer_logits,
+    predict_from_logits=predict_multiclass,
+    threshold=0.5,
+    denormalize_images=None,
+):
     os.makedirs(output_dir, exist_ok=True)
     model.eval()
 
@@ -93,15 +142,11 @@ def save_sample_predictions(model, loader, device, output_dir, max_samples=4):
             filenames = [f"sample_{i}.jpg" for i in range(images.shape[0])]
 
         images = images.to(device)
-        outputs = model(pixel_values=images).logits
-        outputs = torch.nn.functional.interpolate(
-            outputs,
-            size=masks.shape[-2:],
-            mode="bilinear",
-            align_corners=False,
-        )
-        preds = torch.argmax(outputs, dim=1).cpu()
+        outputs = _resize_logits(forward_logits(model, images), masks)
+        preds = predict_from_logits(outputs, threshold=threshold).cpu()
         images_cpu = images.cpu()
+        if denormalize_images is not None:
+            images_cpu = denormalize_images(images_cpu)
         masks_cpu = masks.cpu()
 
         for i in range(images.shape[0]):
@@ -141,14 +186,25 @@ def save_sample_predictions(model, loader, device, output_dir, max_samples=4):
             saved += 1
 
 
-def save_best_model(model, optimizer, epoch, metrics, checkpoint_dir, filename="best_model.pt"):
+def save_best_model(
+    model,
+    optimizer,
+    epoch,
+    metrics,
+    checkpoint_dir,
+    filename="best_model.pt",
+    extra_state=None,
+):
     checkpoint_path = os.path.join(checkpoint_dir, filename)
+    state = {
+        "epoch": epoch,
+        "model_state_dict": model.state_dict(),
+        "optimizer_state_dict": optimizer.state_dict(),
+        "metrics": metrics,
+    }
+    if extra_state:
+        state.update(extra_state)
     save_checkpoint(
-        {
-            "epoch": epoch,
-            "model_state_dict": model.state_dict(),
-            "optimizer_state_dict": optimizer.state_dict(),
-            "metrics": metrics,
-        },
+        state,
         checkpoint_path,
     )

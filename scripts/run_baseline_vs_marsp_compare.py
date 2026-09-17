@@ -1,9 +1,13 @@
 # scripts/run_baseline_vs_marsp_compare.py
 import argparse
+import hashlib
 import json
 import subprocess
 import sys
+import time
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
 
 import cv2
 import numpy as np
@@ -13,11 +17,82 @@ sys.path.append(str(Path(__file__).resolve().parents[1]))
 from src.models.adapter_factory import SUPPORTED_SEGMENTATION_MODELS
 
 
-def run_command(command: list[str]) -> None:
+def run_command(command: list[str]) -> float:
     print("\n[RUN]", " ".join(command))
+    started_at = time.perf_counter()
     result = subprocess.run(command)
     if result.returncode != 0:
         raise RuntimeError(f"Command failed with exit code {result.returncode}")
+    return time.perf_counter() - started_at
+
+
+def file_identity(path: str) -> dict:
+    resolved = Path(path).expanduser().resolve()
+    if not resolved.is_file():
+        raise FileNotFoundError(f"File not found: {resolved}")
+
+    digest = hashlib.sha256()
+    with resolved.open("rb") as file_handle:
+        for chunk in iter(lambda: file_handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+
+    return {
+        "path": str(resolved),
+        "size_bytes": resolved.stat().st_size,
+        "sha256": digest.hexdigest(),
+    }
+
+
+def git_revision() -> Optional[str]:
+    result = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip() or None
+
+
+def build_provenance(
+    *,
+    model: str,
+    checkpoint: str,
+    input_video: str,
+    window_size: int,
+    threshold: float,
+) -> dict:
+    return {
+        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "git_revision": git_revision(),
+        "segmentation_model": model,
+        "checkpoint": file_identity(checkpoint),
+        "input": file_identity(input_video),
+        "parameters": {
+            "window_size": window_size,
+            "threshold": threshold,
+        },
+    }
+
+
+def reusable_run_matches(metrics_path: Path, provenance: dict) -> bool:
+    if not metrics_path.is_file():
+        return False
+
+    try:
+        existing = json.loads(metrics_path.read_text(encoding="utf-8"))
+        existing_provenance = existing["provenance"]
+        return (
+            existing_provenance["segmentation_model"]
+            == provenance["segmentation_model"]
+            and existing_provenance["checkpoint"]["sha256"]
+            == provenance["checkpoint"]["sha256"]
+            and existing_provenance["input"]["sha256"]
+            == provenance["input"]["sha256"]
+            and existing_provenance["parameters"] == provenance["parameters"]
+        )
+    except (KeyError, TypeError, json.JSONDecodeError):
+        return False
 
 
 def load_video_frames(path: str) -> tuple[list[np.ndarray], float]:
@@ -312,37 +387,107 @@ def main() -> None:
     parser.add_argument("--window-size", type=int, default=5)
     parser.add_argument("--threshold", type=float, default=0.5)
     parser.add_argument("--reuse-existing", action="store_true")
+    parser.add_argument(
+        "--output-root",
+        help="Optional root for model-scoped baseline, MARSP, and comparison outputs",
+    )
     args = parser.parse_args()
+
+    if args.window_size <= 0:
+        parser.error("--window-size must be greater than zero")
+    if not 0.0 <= args.threshold <= 1.0:
+        parser.error("--threshold must be between 0.0 and 1.0")
 
     video_name = args.video_name
     input_video = args.input
+    total_started_at = time.perf_counter()
+    provenance = build_provenance(
+        model=args.model,
+        checkpoint=args.checkpoint,
+        input_video=input_video,
+        window_size=args.window_size,
+        threshold=args.threshold,
+    )
 
-    compare_dir = Path("outputs/comparisons")
+    structured_output_root = None
+    if args.output_root:
+        structured_output_root = Path(args.output_root).expanduser().resolve()
+        baseline_dir = structured_output_root / "baseline"
+        compare_dir = structured_output_root / "comparison"
+        marsp_output_root = structured_output_root / "marsp"
+    else:
+        baseline_dir = Path("outputs/comparisons")
+        compare_dir = baseline_dir
+        marsp_output_root = None
+
+    baseline_dir.mkdir(parents=True, exist_ok=True)
     compare_dir.mkdir(parents=True, exist_ok=True)
 
     # Baseline outputs
-    baseline_overlay = str(compare_dir / f"{video_name}_baseline_overlay.mp4")
-    baseline_mask = str(compare_dir / f"{video_name}_baseline_mask.mp4")
-    baseline_prob = str(compare_dir / f"{video_name}_baseline_prob.mp4")
+    if structured_output_root is None:
+        baseline_overlay = str(
+            baseline_dir / f"{video_name}_baseline_overlay.mp4"
+        )
+        baseline_mask = str(
+            baseline_dir / f"{video_name}_baseline_mask.mp4"
+        )
+        baseline_prob = str(
+            baseline_dir / f"{video_name}_baseline_prob.mp4"
+        )
+    else:
+        baseline_overlay = str(baseline_dir / f"{video_name}_overlay.mp4")
+        baseline_mask = str(baseline_dir / f"{video_name}_mask.mp4")
+        baseline_prob = str(baseline_dir / f"{video_name}_probability.mp4")
 
     # MARSP outputs from main pipeline
     marsp_overlay = str(compare_dir / f"{video_name}_marsp_overlay.mp4")
     side_by_side = str(compare_dir / f"{video_name}_baseline_vs_marsp.mp4")
 
     comparison_metrics_json = str(compare_dir / f"{video_name}_baseline_vs_marsp_metrics.json")
+    reuse_validated = args.reuse_existing and reusable_run_matches(
+        Path(comparison_metrics_json),
+        provenance,
+    )
+    previous_timing = {}
+    if reuse_validated:
+        previous_result = json.loads(
+            Path(comparison_metrics_json).read_text(encoding="utf-8")
+        )
+        previous_timing = previous_result.get("timing_seconds", {})
+    if args.reuse_existing and not reuse_validated:
+        print(
+            "[INFO] Existing outputs do not match this model, checkpoint, input, "
+            "and parameter set; running a fresh comparison.",
+            flush=True,
+        )
 
     # Reused MARSP pipeline outputs
-    marsp_final_mask = f"outputs/temporal_aggregation/{video_name}_stabilised_agg_mask.mp4"
-    marsp_summary = f"outputs/marsp/{video_name}_pipeline_summary.json"
+    if marsp_output_root is None:
+        marsp_final_mask = f"outputs/temporal_aggregation/{video_name}_stabilised_agg_mask.mp4"
+        marsp_summary = f"outputs/marsp/{video_name}_pipeline_summary.json"
+    else:
+        marsp_final_mask = str(
+            marsp_output_root
+            / "temporal_aggregation"
+            / f"{video_name}_stabilised_agg_mask.mp4"
+        )
+        marsp_summary = str(
+            marsp_output_root
+            / "summary"
+            / f"{video_name}_pipeline_summary.json"
+        )
 
     # 1. Run baseline inference
-    if not args.reuse_existing or not (
+    baseline_runtime_seconds = previous_timing.get("baseline")
+    baseline_execution = "reused"
+    if not reuse_validated or not (
         Path(baseline_overlay).exists()
         and Path(baseline_mask).exists()
         and Path(baseline_prob).exists()
     ):
+        baseline_execution = "executed"
         print("[STAGE] Running baseline segmentation adapter", flush=True)
-        run_command([
+        baseline_runtime_seconds = run_command([
             sys.executable,
             "scripts/run_video_segmentation.py",
             "--input", input_video,
@@ -355,12 +500,15 @@ def main() -> None:
         ])
 
     # 2. Run MARSP pipeline
-    if not args.reuse_existing or not (
+    marsp_runtime_seconds = previous_timing.get("marsp")
+    marsp_execution = "reused"
+    if not reuse_validated or not (
         Path(marsp_final_mask).exists()
         and Path(marsp_summary).exists()
     ):
+        marsp_execution = "executed"
         print("[STAGE] Running MARSP motion-aware pipeline", flush=True)
-        run_command([
+        marsp_command = [
             sys.executable,
             "scripts/run_marsp_pipeline.py",
             "--video-name", video_name,
@@ -369,7 +517,10 @@ def main() -> None:
             "--checkpoint", args.checkpoint,
             "--window-size", str(args.window_size),
             "--threshold", str(args.threshold),
-        ])
+        ]
+        if marsp_output_root is not None:
+            marsp_command.extend(["--output-root", str(marsp_output_root)])
+        marsp_runtime_seconds = run_command(marsp_command)
 
     # 3. Build MARSP overlay on original frames
     print("[STAGE] Rendering MARSP overlay on original frames", flush=True)
@@ -393,15 +544,41 @@ def main() -> None:
     baseline_masks, _ = load_mask_video(baseline_mask)
     marsp_masks, _ = load_mask_video(marsp_final_mask)
 
-    baseline_summary = summarize_mask_sequence(baseline_masks)
-    marsp_summary_metrics = summarize_mask_sequence(marsp_masks)
+    baseline_summary = {
+        "workflow_mode": "baseline",
+        **summarize_mask_sequence(baseline_masks),
+    }
+    marsp_summary_metrics = {
+        "workflow_mode": "marsp",
+        **summarize_mask_sequence(marsp_masks),
+    }
     comparison = compare_metric_summaries(baseline_summary, marsp_summary_metrics)
     metric_table = build_metric_table(baseline_summary, marsp_summary_metrics)
 
+    current_invocation_seconds = time.perf_counter() - total_started_at
+    original_total_seconds = previous_timing.get("total")
+    if original_total_seconds is None:
+        original_total_seconds = current_invocation_seconds
+
     combined = {
+        "schema_version": 2,
         "video_name": video_name,
         "input_video": input_video,
         "segmentation_model": args.model,
+        "checkpoint": args.checkpoint,
+        "provenance": provenance,
+        "execution": {
+            "baseline": baseline_execution,
+            "marsp": marsp_execution,
+            "reuse_requested": args.reuse_existing,
+            "reuse_validated": reuse_validated,
+        },
+        "timing_seconds": {
+            "baseline": baseline_runtime_seconds,
+            "marsp": marsp_runtime_seconds,
+            "total": original_total_seconds,
+            "current_invocation": current_invocation_seconds,
+        },
         "baseline": baseline_summary,
         "marsp": marsp_summary_metrics,
         "comparison": comparison,
@@ -409,9 +586,11 @@ def main() -> None:
         "artifacts": {
             "baseline_overlay": baseline_overlay,
             "baseline_mask": baseline_mask,
+            "baseline_probability": baseline_prob,
             "marsp_overlay": marsp_overlay,
             "marsp_final_mask": marsp_final_mask,
             "side_by_side_video": side_by_side,
+            "marsp_pipeline_summary": marsp_summary,
         },
     }
 

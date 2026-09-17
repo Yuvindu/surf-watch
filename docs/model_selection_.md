@@ -1,90 +1,94 @@
-# SurfWatch — Model Selection Rationale
+# SurfWatch Model Selection Rationale
 
-## Objective
+## Current objective
 
-Semantic segmentation of surf/ocean scenes to identify scene classes such as water, waves, sky, beach, rocks, and surfers. Selection criteria: segmentation accuracy, training complexity, inference speed, and framework compatibility.
+SurfWatch performs **binary semantic segmentation** of beach imagery and video frames. Each pixel is classified as either rip current or background. The segmentation model supplies frame-level probability maps to the model-agnostic MARSP temporal processing layer, which applies motion compensation, temporal aggregation, thresholding, and post-processing.
 
----
+The Phase 2 research question is broader than selecting a single high-scoring model: it asks whether MARSP improves temporal stability and detection quality consistently across different segmentation architectures, and whether complementary models can later be combined through ensemble fusion.
 
-## Primary Model: SegFormer-B2
+## Evolution from the Phase 1 plan
 
-**Architecture:** Hierarchical transformer encoder (Mix Transformer — MiT-B2) + lightweight MLP decoder \[[1](#ref1)\]
+The Phase 1 proposal considered SegFormer-B2 as the primary model and DeepLabV3+ as a conventional convolutional baseline. That document described intended work rather than completed experiments.
 
-**Why SegFormer-B2:**
+The implemented Phase 2 system currently uses:
 
-- **Accuracy:** ~46.5% mIoU on ADE20K (single-scale) \[[1](#ref1)\], which covers outdoor/nature scene classes (sky, water, sand, vegetation) directly relevant to surf scenes.
-- **Multi-scale context:** The hierarchical encoder captures both fine-grained wave texture and large-scale sky/water regions without positional encoding interpolation artifacts — a known failure mode for other vision transformers \[[1](#ref1)\].
-- **Speed/accuracy balance:** B2 sits at the practical midpoint of the SegFormer family. B0/B1 sacrifice too much accuracy; B4/B5 add latency without proportional gain for MVP purposes \[[1](#ref1)\].
-- **Pretrained weights:** `nvidia/mit-b2` (ImageNet-1k → ADE20K) available via HuggingFace `transformers`; fine-tuning on a surf-specific dataset requires minimal additional infrastructure \[[2](#ref2)\].
-- **Framework support:** First-class HuggingFace support (`SegformerForSemanticSegmentation`) with PyTorch backend, enabling straightforward training loops and export \[[2](#ref2)\].
+- **SegFormer-B0**, retained from the original SurfWatch pipeline.
+- **U-Net with a ResNet34 encoder**, added through the model-agnostic segmentation interface.
 
-**Pretrained checkpoint:** `nvidia/segformer-b2-finetuned-ade-512-512` \[[2](#ref2)\]
+DeepLabV3+ has not been trained or evaluated in SurfWatch. It remains a possible third architecture if the initial two-model experiments show that additional architectural diversity is needed.
 
----
+## Implemented models
 
-## Baseline Comparison Model: DeepLabV3+ (ResNet-50 backbone)
+### SegFormer-B0
 
-**Architecture:** Encoder-decoder with atrous spatial pyramid pooling (ASPP) + ResNet-50 backbone \[[3](#ref3)\]
+SegFormer-B0 is a compact transformer-based semantic segmentation model. It remains the reference model because it is already integrated into the pipeline and has an established SurfWatch checkpoint and evaluation record.
 
-**Why DeepLabV3+ as baseline:**
+The best recorded full validation run achieved:
 
-- **Established benchmark:** DeepLabV3+ is the canonical CNN-based semantic segmentation baseline; comparing against it quantifies the benefit of the transformer approach \[[3](#ref3)\].
-- **Strong edge preservation:** Atrous convolutions and the decoder module preserve water/sky/beach boundary sharpness, making it a meaningful (not trivially weak) comparison \[[3](#ref3)\].
-- **Availability:** Available directly from `torchvision.models.segmentation.deeplabv3_resnet50` with COCO-pretrained weights — zero additional dependencies \[[4](#ref4)\].
-- **Training complexity:** Lower than SegFormer; easier to reproduce and diagnose during MVP iteration \[[1](#ref1)\]\[[3](#ref3)\].
+| Metric | Value |
+|---|---:|
+| IoU | 0.7551 |
+| Dice | 0.8437 |
+| Precision | 0.8574 |
+| Recall | 0.8312 |
 
-**Pretrained checkpoint:** `torchvision` — `deeplabv3_resnet50(weights=DeepLabV3_ResNet50_Weights.COCO_WITH_VOC_LABELS_V1)` \[[4](#ref4)\]
+The detailed run record is available in [`experiments/baseline_cloud_run_01.md`](experiments/baseline_cloud_run_01.md).
 
----
+### U-Net ResNet34
 
-## Comparison Summary
+U-Net ResNet34 provides a convolutional encoder-decoder architecture with skip connections. It was selected as the second model because it differs structurally from SegFormer while remaining practical to train and deploy on the available dataset and hardware.
 
-| Criterion              | SegFormer-B2 (Primary)          | DeepLabV3+-R50 (Baseline)        |
-|------------------------|----------------------------------|-----------------------------------|
-| Architecture           | Transformer encoder, MLP decoder \[[1](#ref1)\] | CNN encoder-decoder + ASPP \[[3](#ref3)\] |
-| ADE20K mIoU (SS)       | ~46.5% \[[1](#ref1)\]          | ~44.1% (ResNet-50 backbone) \[[5](#ref5)\] |
-| Inference speed (GPU)  | ~25 FPS @ 512×512 (approx.) \[[1](#ref1)\] | ~35 FPS @ 512×512 \[[5](#ref5)\] |
-| Parameters             | 27.4 M \[[1](#ref1)\]          | 42.0 M \[[4](#ref4)\]           |
-| Training complexity    | Medium (higher GPU memory req.) \[[1](#ref1)\] | Low (mature, stable training) \[[3](#ref3)\] |
-| Pretrained source      | HuggingFace (`nvidia/mit-b2`) \[[2](#ref2)\] | torchvision (COCO) \[[4](#ref4)\] |
-| Surf scene suitability | High (ADE20K covers water/sky) \[[1](#ref1)\] | Good (atrous conv for multi-scale) \[[3](#ref3)\] |
+The best checkpoint from the first full cloud training run was produced at epoch 10 and achieved:
 
-> **Note:** The ADE20K mIoU of ~44.1% for DeepLabV3+ is reported with a ResNet-50 backbone; published results using ResNet-101 are marginally higher (~44.17%) \[[5](#ref5)\]. The ResNet-50 variant used here is chosen for training simplicity and lower parameter count.
+| Metric | Value |
+|---|---:|
+| IoU | 0.7407 |
+| Dice | 0.8311 |
+| Precision | 0.9034 |
+| Recall | 0.7828 |
 
----
+The detailed run record is available in [`experiments/unet_resnet34_cloud_run_01.md`](experiments/unet_resnet34_cloud_run_01.md).
 
-## Alignment with SurfWatch Objective
+## Initial comparison
 
-SurfWatch requires reliable pixel-level scene understanding across variable lighting, wave states, and camera angles. SegFormer-B2's transformer encoder better generalises across these distribution shifts compared to fixed-receptive-field CNNs \[[1](#ref1)\], which is the primary reason it is selected as the MVP model over DeepLabV3+.
+| Property | SegFormer-B0 | U-Net ResNet34 |
+|---|---|---|
+| Architecture family | Transformer-based encoder | Convolutional encoder-decoder |
+| Validation IoU | 0.7551 | 0.7407 |
+| Validation Dice | 0.8437 | 0.8311 |
+| Validation precision | 0.8574 | 0.9034 |
+| Validation recall | 0.8312 | 0.7828 |
+| Current role | Reference model | Second model and ensemble candidate |
 
-DeepLabV3+-ResNet50 serves as the baseline to demonstrate this improvement quantitatively on the SurfWatch evaluation set \[[3](#ref3)\].
+SegFormer currently has the stronger IoU, Dice, and recall, while U-Net has higher precision. This suggests potentially useful complementary behaviour, but the frame-level results alone do not establish whether an ensemble will improve video-level performance. Both models must first be evaluated under the same baseline and MARSP configurations on the same held-out videos.
 
-> **Dataset note:** Both models will be fine-tuned on a surf-specific dataset. The target dataset for fine-tuning should be defined and documented before training begins to fully satisfy dataset alignment criteria.
+## DeepLabV3+ status
 
----
+DeepLabV3+ is no longer the immediate next training target. Training another model before completing the controlled SegFormer-versus-U-Net evaluation would increase compute and experimental scope without answering the current model-agnostic MARSP question.
 
-## Not Selected
+DeepLabV3+ may be added later if:
 
-**FCN (Fully Convolutional Network):** Excluded \[[6](#ref6)\]. Lacks contextual aggregation (no ASPP or attention), produces spatially inconsistent predictions, and is outperformed by 15–30 mIoU points on all relevant benchmarks \[[1](#ref1)\]\[[3](#ref3)\]\[[6](#ref6)\]. Not a meaningful comparison partner for a 2025 system.
+- the two-model ensemble lacks sufficient diversity;
+- a third architecture is required for a broader ablation study; or
+- the research evaluation specifically benefits from an atrous-convolution baseline.
 
----
+## Planned evaluation sequence
+
+1. Run SegFormer-B0 and U-Net ResNet34 on the same held-out video set.
+2. Evaluate each model with and without MARSP using identical thresholds, temporal parameters, and post-processing settings.
+3. Compare segmentation quality, temporal stability, runtime, and per-video failure cases.
+4. Implement multi-model experiment orchestration and provenance reporting.
+5. Evaluate ensemble fusion using the two trained models.
+6. Decide whether DeepLabV3+ would add enough research value to justify training it.
+
+This sequence keeps model selection evidence-driven and separates the effect of the segmentation architecture from the effect of MARSP temporal processing.
+
+## Evaluation boundary
+
+Quantitative model selection must use the documented validation or held-out video split and must not tune against the public test set. All reports should preserve checkpoint identity, dataset split, preprocessing, threshold, MARSP parameters, and code revision so results can be reproduced.
 
 ## References
 
-<a id="ref1"></a>**[1]** Xie, E., Wang, W., Yu, Z., Anandkumar, A., Alvarez, J. M., & Luo, P. (2021). *SegFormer: Simple and Efficient Design for Semantic Segmentation with Transformers.* NeurIPS 2021.
-<https://arxiv.org/abs/2105.15203>
-
-<a id="ref2"></a>**[2]** NVIDIA. *SegFormer-B2 fine-tuned on ADE20K (512×512).* HuggingFace Model Hub.
-<https://huggingface.co/nvidia/segformer-b2-finetuned-ade-512-512>
-
-<a id="ref3"></a>**[3]** Chen, L.-C., Zhu, Y., Papandreou, G., Schroff, F., & Adam, H. (2018). *Encoder-Decoder with Atrous Separable Convolution for Semantic Image Segmentation (DeepLabV3+).* ECCV 2018.
-<https://arxiv.org/abs/1802.02611>
-
-<a id="ref4"></a>**[4]** PyTorch / torchvision. *deeplabv3_resnet50 — Torchvision documentation.*
-<https://pytorch.org/vision/main/models/generated/torchvision.models.segmentation.deeplabv3_resnet50.html>
-
-<a id="ref5"></a>**[5]** Databricks. *Setting a Baseline for Image Segmentation Speedups.* (2024).
-<https://www.databricks.com/blog/behind-the-scenes>
-
-<a id="ref6"></a>**[6]** Long, J., Shelhamer, E., & Darrell, T. (2015). *Fully Convolutional Networks for Semantic Segmentation.* CVPR 2015.
-<https://arxiv.org/abs/1411.4038>
+- Xie, E. et al. (2021). *SegFormer: Simple and Efficient Design for Semantic Segmentation with Transformers*. https://arxiv.org/abs/2105.15203
+- Ronneberger, O., Fischer, P., and Brox, T. (2015). *U-Net: Convolutional Networks for Biomedical Image Segmentation*. https://arxiv.org/abs/1505.04597
+- Chen, L.-C. et al. (2018). *Encoder-Decoder with Atrous Separable Convolution for Semantic Image Segmentation*. https://arxiv.org/abs/1802.02611

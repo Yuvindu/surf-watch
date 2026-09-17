@@ -9,11 +9,11 @@ from src.models.segmentation_interface import (
     SegmentationModelMetadata,
     SegmentationResult,
 )
-from src.models.unet_resnet34 import build_unet_resnet34_model
-
-
-IMAGENET_MEAN = (0.485, 0.456, 0.406)
-IMAGENET_STD = (0.229, 0.224, 0.225)
+from src.models.unet_resnet34 import (
+    IMAGENET_MEAN,
+    IMAGENET_STD,
+    build_unet_resnet34_model,
+)
 
 
 class UnetResNet34SegmentationAdapter:
