@@ -42,6 +42,7 @@ The repo currently records a few key decisions that shape the project:
 - RipVIS instance annotations are converted into binary semantic segmentation masks for SurfWatch
 - local quantitative evaluation uses the validation split because the public test split does not include local labels
 - baseline training uses SegFormer for binary rip-current segmentation
+- U-Net ResNet34 is the second trained segmentation model; its best checkpoint is selected by validation IoU
 - MARSP work extends the baseline with motion compensation and temporal aggregation
 
 See [docs/decision-log.md](/Users/rashmikecaldera/Developer/curtin/CSP/surfwatch/docs/decision-log.md) for the running decision history.
@@ -146,6 +147,25 @@ This produces:
 - checkpoints under `checkpoints/`
 - prediction comparison outputs under `outputs/predictions/`
 
+## U-Net ResNet34 Training
+
+Train the second segmentation model with the matched RipVIS protocol:
+
+```bash
+python scripts/train_unet_resnet34.py \
+  --ripvis-root ../RipVIS \
+  --processed-root data/processed \
+  --image-size 512 \
+  --batch-size 4 \
+  --epochs 20 \
+  --encoder-weights imagenet \
+  --seed 42
+```
+
+The completed RTX 4090 run selected epoch 10 by validation IoU. Its best validation metrics were IoU `0.7407`, Dice `0.8311`, precision `0.9034`, and recall `0.7828`. The compatible runtime checkpoint is stored at `checkpoints/unet_resnet34_best_model.pt`.
+
+The training pipeline records its full configuration, metric history, runtime, environment, and adapter smoke check in `unet_resnet34_training_manifest.json`. See [docs/unet-resnet34-training.md](/Users/rashmikecaldera/Developer/curtin/CSP/surfwatch/docs/unet-resnet34-training.md) for reproduction instructions and [docs/experiments/unet_resnet34_cloud_run_01.md](/Users/rashmikecaldera/Developer/curtin/CSP/surfwatch/docs/experiments/unet_resnet34_cloud_run_01.md) for the completed experiment.
+
 ## Running Motion Compensation
 
 Run the feature-based partial affine motion compensation prototype on a sample video:
@@ -160,17 +180,33 @@ python scripts/run_motion_compensation.py \
 
 ## Running Video Segmentation Inference
 
-Run frame-level SegFormer inference on a video and save overlay, binary mask, and probability outputs:
+Run frame-level segmentation inference on a video and save overlay, binary mask, and probability outputs:
 
 ```bash
 python scripts/run_video_segmentation.py \
   --input ../RipVIS/train/videos/RipVIS-051.mp4 \
+  --model segformer \
   --checkpoint checkpoints/best_model.pt \
   --output-overlay outputs/video_inference/RipVIS-051_original_overlay.mp4 \
   --output-mask outputs/video_inference/RipVIS-051_original_mask.mp4 \
   --output-prob outputs/video_inference/RipVIS-051_original_prob.mp4 \
   --threshold 0.5
 ```
+
+The model-agnostic interface also supports U-Net with a ResNet34 encoder:
+
+```bash
+python scripts/run_video_segmentation.py \
+  --input ../RipVIS/train/videos/RipVIS-051.mp4 \
+  --model unet-resnet34 \
+  --checkpoint checkpoints/unet_resnet34_best_model.pt \
+  --output-overlay outputs/video_inference/RipVIS-051_unet_overlay.mp4 \
+  --output-mask outputs/video_inference/RipVIS-051_unet_mask.mp4 \
+  --output-prob outputs/video_inference/RipVIS-051_unet_prob.mp4 \
+  --threshold 0.5
+```
+
+The trained checkpoint at `checkpoints/unet_resnet34_best_model.pt` makes U-Net available through the Analyse page and the shared baseline/MARSP comparison flow. If that ignored local artifact is absent on another machine, the model registry reports U-Net as unavailable until the checkpoint is restored.
 
 ## Running Temporal Aggregation
 
@@ -196,6 +232,7 @@ Run the full motion-aware SurfWatch pipeline end to end:
 python scripts/run_marsp_pipeline.py \
   --video-name RipVIS-051 \
   --input ../RipVIS/train/videos/RipVIS-051.mp4 \
+  --model segformer \
   --checkpoint checkpoints/best_model.pt \
   --window-size 5 \
   --threshold 0.5
@@ -204,7 +241,7 @@ python scripts/run_marsp_pipeline.py \
 This pipeline currently performs:
 
 1. motion compensation
-2. frame-level SegFormer inference on original and stabilised video
+2. frame-level segmentation inference on original and stabilised video
 3. motion-adaptive temporal aggregation
 4. generation of stage-wise outputs and a pipeline summary JSON
 
@@ -249,6 +286,30 @@ Typical artifacts include:
 - `<video_name>_marsp_overlay.mp4`
 - `<video_name>_baseline_vs_marsp.mp4`
 - `<video_name>_baseline_vs_marsp_metrics.json`
+
+## Running Multi-Model Comparisons
+
+Run the same baseline and MARSP comparison for multiple registered model
+adapters with one command:
+
+```bash
+python scripts/run_multi_model_comparison.py \
+  --run-name held-out-ripvis-002 \
+  --video-name RipVIS-002 \
+  --input ../RipVIS/test/videos/RipVIS-002.mp4 \
+  --model-checkpoint segformer=checkpoints/best_model.pt \
+  --model-checkpoint unet-resnet34=checkpoints/unet_resnet34_best_model.pt \
+  --window-size 5 \
+  --threshold 0.5
+```
+
+Each model runs independently. A failed adapter is recorded in the final
+summary without removing artifacts generated by the other adapters. Outputs
+are grouped by run, model, and workflow under `outputs/multi_model/`, with
+aggregate JSON and CSV summaries at the run root.
+
+See [docs/multi-model-comparison.md](docs/multi-model-comparison.md) for the
+CLI contract, output structure, failure behaviour, and a complete example.
 
 ## Running The Web Demo
 
@@ -299,8 +360,13 @@ See [docs/frontend-backend-comparison-flow.md](/Users/rashmikecaldera/Developer/
 SurfWatch now has:
 
 - a working semantic segmentation dataset pipeline
-- a trained SegFormer baseline
+- trained SegFormer-B0 and U-Net ResNet34 models
+- a model-agnostic segmentation interface with adapters for both models
 - motion compensation and temporal aggregation prototypes
 - an integrated MARSP pipeline runner for end-to-end experimentation
 
-The next stage of the project is to consolidate the baseline and MARSP comparison workflow, review trade-offs between stability gains and added pipeline complexity, and prepare the project for final reporting and demonstration.
+The current stage is a repeatable multi-model comparison workflow for
+SegFormer-B0 and U-Net ResNet34, with each model tested both with and without
+MARSP on the same input. The resulting model-scoped artifacts and aggregate
+provenance summaries prepare the project for broader held-out evaluation and
+ensemble fusion experiments. DeepLabV3+ remains an optional later extension.

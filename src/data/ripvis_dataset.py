@@ -16,6 +16,7 @@ class RipVISSemanticDataset(Dataset):
         split: str,
         image_size=(512, 512),
         return_filename: bool = False,
+        normalization=None,
     ):
         if split not in {"train", "val"}:
             raise ValueError("split must be 'train' or 'val'")
@@ -23,6 +24,7 @@ class RipVISSemanticDataset(Dataset):
         self.split = split
         self.return_filename = return_filename
         self.image_size = image_size
+        self.normalization = normalization
 
         self.images_dir = (
             Path(ripvis_root) / split / "sampled_images" / "sampled_images" / "images"
@@ -73,6 +75,9 @@ class RipVISSemanticDataset(Dataset):
         )
 
         image = TF.to_tensor(image)
+        if self.normalization is not None:
+            mean, std = self.normalization
+            image = TF.normalize(image, mean=mean, std=std)
 
         mask_np = np.array(mask)
         mask_np = (mask_np > 0).astype(np.uint8)

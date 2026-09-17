@@ -3,6 +3,29 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from typing import Optional
+
+sys.path.append(str(Path(__file__).resolve().parents[1]))
+
+from src.models.adapter_factory import SUPPORTED_SEGMENTATION_MODELS
+
+
+def resolve_output_directories(output_root: Optional[str]) -> dict:
+    if output_root is None:
+        return {
+            "motion": Path("outputs/motion_compensation"),
+            "inference": Path("outputs/video_inference"),
+            "aggregation": Path("outputs/temporal_aggregation"),
+            "summary": Path("outputs/marsp"),
+        }
+
+    root = Path(output_root).expanduser().resolve()
+    return {
+        "motion": root / "motion_compensation",
+        "inference": root / "video_inference",
+        "aggregation": root / "temporal_aggregation",
+        "summary": root / "summary",
+    }
 
 
 def run_command(command: list[str]) -> None:
@@ -19,20 +42,31 @@ def main():
     parser.add_argument(
         "--checkpoint",
         default="checkpoints/best_model.pt",
-        help="Path to trained SegFormer checkpoint",
+        help="Path to trained segmentation model checkpoint",
+    )
+    parser.add_argument(
+        "--model",
+        default="segformer",
+        choices=SUPPORTED_SEGMENTATION_MODELS,
+        help="Segmentation model adapter to use",
     )
     parser.add_argument("--window-size", type=int, default=5)
     parser.add_argument("--threshold", type=float, default=0.5)
+    parser.add_argument(
+        "--output-root",
+        help="Optional root for structured MARSP outputs",
+    )
     args = parser.parse_args()
 
     video_name = args.video_name
     input_video = args.input
     checkpoint = args.checkpoint
 
-    motion_dir = Path("outputs/motion_compensation")
-    infer_dir = Path("outputs/video_inference")
-    agg_dir = Path("outputs/temporal_aggregation")
-    marsp_dir = Path("outputs/marsp")
+    output_directories = resolve_output_directories(args.output_root)
+    motion_dir = output_directories["motion"]
+    infer_dir = output_directories["inference"]
+    agg_dir = output_directories["aggregation"]
+    marsp_dir = output_directories["summary"]
 
     motion_dir.mkdir(parents=True, exist_ok=True)
     infer_dir.mkdir(parents=True, exist_ok=True)
@@ -81,6 +115,7 @@ def main():
         sys.executable,
         "scripts/run_video_segmentation.py",
         "--input", input_video,
+        "--model", args.model,
         "--checkpoint", checkpoint,
         "--output-overlay", orig_overlay,
         "--output-mask", orig_mask,
@@ -93,6 +128,7 @@ def main():
         sys.executable,
         "scripts/run_video_segmentation.py",
         "--input", stabilised_video,
+        "--model", args.model,
         "--checkpoint", checkpoint,
         "--output-overlay", stab_overlay,
         "--output-mask", stab_mask,
@@ -131,6 +167,7 @@ def main():
     summary = {
         "video_name": video_name,
         "input_video": input_video,
+        "segmentation_model": args.model,
         "checkpoint": checkpoint,
         "window_size": args.window_size,
         "threshold": args.threshold,

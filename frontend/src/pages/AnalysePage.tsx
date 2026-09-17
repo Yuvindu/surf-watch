@@ -1,4 +1,4 @@
-import { useContext, useRef, useState } from 'react';
+import { useContext, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
@@ -9,6 +9,7 @@ import Chip from '@mui/material/Chip';
 import Divider from '@mui/material/Divider';
 import Slider from '@mui/material/Slider';
 import TextField from '@mui/material/TextField';
+import MenuItem from '@mui/material/MenuItem';
 import DeleteIcon from '@mui/icons-material/Delete';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import FileUploader from '../components/FileUploader';
@@ -19,6 +20,7 @@ import { AnalysisContext } from '../context/AnalysisContext';
 import { normalizeCaseResponse } from '../models/analysis';
 import { COMPARISON_PIPELINE_STAGES, PIPELINE_STAGES } from '../services/mockApi';
 import { formatFileSize, generateId } from '../utils/helpers';
+import { fetchSegmentationModels, type SegmentationModelOption } from '../services/comparisonApi';
 
 export default function AnalysePage() {
   const navigate = useNavigate();
@@ -28,6 +30,27 @@ export default function AnalysePage() {
   const caseIdRef = useRef<string | null>(null);
   const [windowSize, setWindowSize] = useState(5);
   const [threshold, setThreshold] = useState(0.5);
+  const [model, setModel] = useState('segformer');
+  const [modelOptions, setModelOptions] = useState<SegmentationModelOption[]>([]);
+  const [modelError, setModelError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isActive = true;
+    fetchSegmentationModels()
+      .then(data => {
+        if (!isActive) return;
+        setModelOptions(data.models);
+        setModel(data.defaultModel);
+        setModelError(null);
+      })
+      .catch(err => {
+        if (!isActive) return;
+        setModelError(err instanceof Error ? err.message : String(err));
+      });
+    return () => {
+      isActive = false;
+    };
+  }, []);
 
   const isProcessing = status === 'processing';
   const isComplete = status === 'complete';
@@ -53,9 +76,10 @@ export default function AnalysePage() {
       createdAt: new Date().toISOString(),
       windowSize: uploadFile.fileType === 'video' ? windowSize : undefined,
       threshold: uploadFile.fileType === 'video' ? threshold : undefined,
+      model: uploadFile.fileType === 'video' ? model : undefined,
     });
     if (uploadFile.fileType === 'video') {
-      const response = await runComparison(uploadFile, { windowSize, threshold }, partial => {
+      const response = await runComparison(uploadFile, { model, windowSize, threshold }, partial => {
         updateCase(caseId, partial);
       });
       if (response && caseIdRef.current) {
@@ -103,6 +127,7 @@ export default function AnalysePage() {
 
         {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
         {analysisError && <Alert severity="error" sx={{ mb: 2 }}>{analysisError}</Alert>}
+        {modelError && <Alert severity="error" sx={{ mb: 2 }}>{modelError}</Alert>}
 
         {!uploadFile && !isProcessing && !isComplete && !activeProcessingCase && (
           <FileUploader onFile={handleFile} disabled={false} />
@@ -160,6 +185,25 @@ export default function AnalysePage() {
                   Comparison parameters
                 </Typography>
                 <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' } }}>
+                  <Box sx={{ gridColumn: { sm: '1 / -1' } }}>
+                    <Typography variant="caption" color="text.secondary" display="block" mb={0.5}>
+                      Segmentation model
+                    </Typography>
+                    <TextField
+                      select
+                      size="small"
+                      fullWidth
+                      value={model}
+                      disabled={modelOptions.length === 0}
+                      onChange={(event) => setModel(event.target.value)}
+                    >
+                      {modelOptions.map(option => (
+                        <MenuItem key={option.id} value={option.id} disabled={!option.available}>
+                          {option.label}{option.available ? '' : ' (checkpoint required)'}
+                        </MenuItem>
+                      ))}
+                    </TextField>
+                  </Box>
                   <Box>
                     <Typography variant="caption" color="text.secondary" display="block" mb={0.5}>
                       Window size
@@ -201,6 +245,10 @@ export default function AnalysePage() {
               fullWidth
               startIcon={<PlayArrowIcon />}
               onClick={handleRun}
+              disabled={
+                uploadFile.fileType === 'video'
+                && !modelOptions.some(option => option.id === model && option.available)
+              }
             >
               {uploadFile.fileType === 'video' ? 'Run Baseline vs MARSP Comparison' : 'Run Detection'}
             </Button>

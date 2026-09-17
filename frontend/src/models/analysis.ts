@@ -31,6 +31,7 @@ export interface AnalysisCase {
   predictionMaskUrl?: string;      // backend: predictionMaskUrl (pre-rendered mask)
   confidenceScore?: number;        // backend: confidenceScore (flat, 0–1)
   summaryLabel?: string;           // backend: summaryLabel e.g. "Rip current detected"
+  model?: string;                  // backend: selected segmentation adapter id
   windowSize?: number;             // backend: temporal aggregation window
   threshold?: number;              // backend: mask threshold
   comparisonVideoUrl?: string;     // backend: baseline-vs-MARSP side-by-side video
@@ -64,6 +65,7 @@ export interface CaseResponse {
   predictionMaskUrl: string;
   confidenceScore: number;
   summaryLabel: string;
+  model?: string;
   windowSize?: number;
   threshold?: number;
   comparisonVideoUrl?: string;
@@ -99,6 +101,7 @@ export function normalizeCaseResponse(
     predictionMaskUrl: response.predictionMaskUrl,
     confidenceScore: response.confidenceScore,
     summaryLabel: response.summaryLabel,
+    model: response.model,
     windowSize: response.windowSize,
     threshold: response.threshold,
     comparisonVideoUrl: response.comparisonVideoUrl,

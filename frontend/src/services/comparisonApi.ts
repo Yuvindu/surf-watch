@@ -5,15 +5,28 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000
 const POLL_INTERVAL_MS = 1000;
 
 export interface ComparisonRunOptions {
+  model: string;
   windowSize: number;
   threshold: number;
+}
+
+export interface SegmentationModelOption {
+  id: string;
+  label: string;
+  description: string;
+  available: boolean;
+}
+
+interface SegmentationModelsResponse {
+  defaultModel: string;
+  models: SegmentationModelOption[];
 }
 
 function wait(ms: number) {
   return new Promise<void>(resolve => setTimeout(resolve, ms));
 }
 
-interface ComparisonJobStatus {
+export interface ComparisonJobStatus {
   jobId: string;
   caseId: string;
   caseName: string;
@@ -22,10 +35,20 @@ interface ComparisonJobStatus {
   currentTask?: string;
   createdAt?: string;
   updatedAt?: string;
+  model?: string;
   windowSize?: number;
   threshold?: number;
   error?: string;
   result?: CaseResponse;
+}
+
+export async function fetchSegmentationModels(): Promise<SegmentationModelsResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/models`);
+  const data = await response.json() as SegmentationModelsResponse & { error?: string };
+  if (!response.ok) {
+    throw new Error(data.error ?? 'Could not load segmentation models.');
+  }
+  return data;
 }
 
 export async function runBaselineMarspComparison(
@@ -38,6 +61,7 @@ export async function runBaselineMarspComparison(
 ): Promise<CaseResponse> {
   const form = new FormData();
   form.append('file', uploadFile.file);
+  form.append('model', options.model);
   form.append('windowSize', String(options.windowSize));
   form.append('threshold', String(options.threshold));
 

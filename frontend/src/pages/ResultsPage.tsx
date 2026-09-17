@@ -50,6 +50,7 @@ export default function ResultsPage() {
     metricTable,
     windowSize,
     threshold,
+    model,
   } = analysisCase;
 
   // Use backend-provided confidence if available, otherwise fall back to mock prediction
@@ -182,13 +183,16 @@ export default function ResultsPage() {
               )}
 
               {/* Frame-level stats — only available with local mock data */}
-              {(windowSize !== undefined || threshold !== undefined) && (
+              {(model !== undefined || windowSize !== undefined || threshold !== undefined) && (
                 <>
                   <Divider sx={{ my: 2 }} />
                   <Typography variant="caption" color="text.secondary" display="block" mb={1}>
                     Parameters
                   </Typography>
                   <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
+                    {model !== undefined && (
+                      <Chip label={`Model ${model}`} size="small" sx={{ fontSize: '0.65rem', height: 20 }} />
+                    )}
                     {windowSize !== undefined && (
                       <Chip label={`Window ${windowSize}`} size="small" sx={{ fontSize: '0.65rem', height: 20 }} />
                     )}
