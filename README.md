@@ -269,6 +269,11 @@ for metric definitions and experiment rules, and
 [docs/ensemble-fusion.md](docs/ensemble-fusion.md) for the fusion contract and
 formal experiment procedure.
 
+The first complete equal-weight run achieved foreground IoU 0.4701, improving
+on U-Net's 0.4201 but not SegFormer's 0.5027. The ensemble was nevertheless the
+best model on 8 of 36 videos. The formal result and artifact hashes are recorded
+in [docs/experiments/ensemble_fusion_01.md](docs/experiments/ensemble_fusion_01.md).
+
 ## Running Temporal Aggregation
 
 Run temporal aggregation over a probability video:

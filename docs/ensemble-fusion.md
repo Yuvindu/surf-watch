@@ -96,3 +96,12 @@ local validation experiment rather than an untouched public-test benchmark.
 The equal-weight run tests a predeclared baseline. Any later weight or threshold
 tuning must be documented separately and must not be reported as independent
 held-out performance on the same validation data.
+
+## Completed Baseline
+
+The formal equal-weight evaluation completed on 23 September 2026. It achieved
+foreground IoU 0.4701, compared with 0.5027 for SegFormer and 0.4201 for U-Net.
+The ensemble was the unique per-video winner on 8 of 36 videos but did not beat
+SegFormer overall. See
+[`experiments/ensemble_fusion_01.md`](experiments/ensemble_fusion_01.md) for the
+full metrics, provenance, artifact hashes, and interpretation.
