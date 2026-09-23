@@ -41,6 +41,8 @@ checkpoints/
 /models/
 !src/models/
 !src/models/**
+src/models/__pycache__/
+src/models/**/*.py[cod]
 outputs/
 runs/
 results/

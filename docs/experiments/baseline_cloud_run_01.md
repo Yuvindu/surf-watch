@@ -1,5 +1,13 @@
 # Baseline Cloud Run 01
 
+## Artifact availability
+
+The original epoch-4 checkpoint was deleted with its RunPod persistent volume
+and is not available locally. The metrics below remain the historical record of
+the completed Phase 1 experiment, but the model weights cannot be independently
+re-evaluated. A controlled replacement run is therefore required before new
+SegFormer, U-Net, or ensemble conclusions are reported.
+
 ## Objective
 Run the first full cloud-based baseline training experiment for SurfWatch using SegFormer on the RipVIS semantic segmentation dataset.
 

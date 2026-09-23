@@ -21,18 +21,19 @@ DeepLabV3+ has not been trained or evaluated in SurfWatch. It remains a possible
 
 ### SegFormer-B0
 
-SegFormer-B0 is a compact transformer-based semantic segmentation model. It remains the reference model because it is already integrated into the pipeline and has an established SurfWatch checkpoint and evaluation record.
+SegFormer-B0 is a compact transformer-based semantic segmentation model. It remains the reference model because it is already integrated into the pipeline and now has a reproducible, hash-verified replacement checkpoint.
 
 The best recorded full validation run achieved:
 
 | Metric | Value |
 |---|---:|
-| IoU | 0.7551 |
-| Dice | 0.8437 |
-| Precision | 0.8574 |
-| Recall | 0.8312 |
+| IoU | 0.7565 |
+| Dice | 0.8449 |
+| Precision | 0.8577 |
+| Recall | 0.8331 |
 
-The detailed run record is available in [`experiments/baseline_cloud_run_01.md`](experiments/baseline_cloud_run_01.md).
+The detailed replacement run record is available in
+[`experiments/segformer_reproduction_02.md`](experiments/segformer_reproduction_02.md).
 
 ### U-Net ResNet34
 
@@ -54,13 +55,18 @@ The detailed run record is available in [`experiments/unet_resnet34_cloud_run_01
 | Property | SegFormer-B0 | U-Net ResNet34 |
 |---|---|---|
 | Architecture family | Transformer-based encoder | Convolutional encoder-decoder |
-| Validation IoU | 0.7551 | 0.7407 |
-| Validation Dice | 0.8437 | 0.8311 |
-| Validation precision | 0.8574 | 0.9034 |
-| Validation recall | 0.8312 | 0.7828 |
+| Validation IoU | 0.7565 | 0.7407 |
+| Validation Dice | 0.8449 | 0.8311 |
+| Validation precision | 0.8577 | 0.9034 |
+| Validation recall | 0.8331 | 0.7828 |
 | Current role | Reference model | Second model and ensemble candidate |
 
-SegFormer currently has the stronger IoU, Dice, and recall, while U-Net has higher precision. This suggests potentially useful complementary behaviour, but the frame-level results alone do not establish whether an ensemble will improve video-level performance. Both models must first be evaluated under the same baseline and MARSP configurations on the same held-out videos.
+The source-resolution matched evaluation confirms the same trade-off:
+SegFormer achieved foreground IoU 0.5027, recall 0.5916, and precision 0.7698;
+U-Net achieved foreground IoU 0.4201, recall 0.4500, and precision 0.8633.
+SegFormer led on 19 of 36 videos, U-Net led on 11, and 6 tied. The different
+error profiles justify evaluating ensemble fusion, but do not establish that
+fusion will outperform the stronger standalone SegFormer result.
 
 ## DeepLabV3+ status
 
