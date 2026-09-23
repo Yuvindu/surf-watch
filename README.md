@@ -166,6 +166,13 @@ checkpoint is no longer available, so its metrics remain historical evidence;
 the controlled replacement procedure is documented in
 [docs/segformer-reproduction-training.md](docs/segformer-reproduction-training.md).
 
+The replacement run completed on 23 September 2026 and selected epoch 4 at
+validation IoU 0.7565. Its checkpoint and complete run artifacts were verified
+after local transfer, and the checkpoint is installed at the runtime path
+`checkpoints/best_model.pt`. The corrected source-resolution comparison achieved
+foreground IoU 0.5027 for SegFormer and 0.4201 for U-Net; see
+[docs/experiments/segformer_reproduction_02.md](docs/experiments/segformer_reproduction_02.md).
+
 ## U-Net ResNet34 Training
 
 Train the second segmentation model with the matched RipVIS protocol:

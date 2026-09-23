@@ -7,6 +7,12 @@ on 23 September 2026 because the SegFormer checkpoint provenance did not match
 the documented Phase 1 best checkpoint. The run remains useful as evaluator
 software-validation evidence.
 
+The valid replacement run is documented in
+[`segformer_reproduction_02.md`](segformer_reproduction_02.md). Its reproduced
+SegFormer checkpoint achieved foreground IoU 0.5027 against U-Net's 0.4201 on
+the same 4,349 frames. Use the replacement results for all model-selection and
+ensemble decisions.
+
 ## Objective
 
 Compare the fixed best SegFormer-B0 and U-Net ResNet34 checkpoints on exactly
@@ -126,8 +132,9 @@ The same artifacts remain on the persistent RunPod volume under:
 
 `/workspace/surfwatch/outputs/held_out_evaluation/segformer-unet-val-full-2026-09-17/`
 
-## Decision
+## Historical Decision
 
-Proceed with SCRUM-86 using equal-weight probability fusion as the first
-ensemble baseline. Compare the ensemble against both component models on this
-same validation selection before considering tuned weights or a third model.
+This decision was based on an invalid SegFormer checkpoint and is retained only
+as experiment history. The valid replacement run independently supports
+proceeding with SCRUM-86 using equal-weight probability fusion as the first
+ensemble baseline, but with the reproduced checkpoint as the component model.

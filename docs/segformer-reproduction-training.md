@@ -131,5 +131,16 @@ python scripts/evaluate_held_out_models.py \
   --device auto
 ```
 
-The replacement results must supersede the invalidated SegFormer rows from
-`held_out_model_evaluation_01.md` before ensemble fusion begins.
+The formal reproduction completed on 23 September 2026. Epoch 4 was selected
+with validation IoU 0.7565, and all seven checkpoint files passed manifest
+verification after local transfer. The selected checkpoint SHA-256 is
+`3fca0f0fd315f306e07d33b21a1641b223a1e5c16a41abe7c121679cd89f7371`.
+It is installed locally at the registry's runtime path,
+`checkpoints/best_model.pt`; the displaced invalid epoch-1 artifact is retained
+as `checkpoints/segformer_invalid_epoch1_model.pt`.
+
+The replacement matched evaluation produced foreground IoU 0.5027 for
+SegFormer and 0.4201 for U-Net. These results supersede the invalidated
+SegFormer rows from `held_out_model_evaluation_01.md`. See
+[`experiments/segformer_reproduction_02.md`](experiments/segformer_reproduction_02.md)
+for the complete training, provenance, and comparison record.
