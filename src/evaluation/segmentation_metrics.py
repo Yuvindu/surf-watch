@@ -93,7 +93,7 @@ def summarize_records(records: list[dict]) -> dict:
         name: mean_defined(record["metrics"][name] for record in records)
         for name in metric_names
     }
-    return {
+    summary = {
         "frame_count": len(records),
         "confusion": confusion,
         "micro": metrics_from_confusion(confusion),
@@ -111,3 +111,12 @@ def summarize_records(records: list[dict]) -> dict:
             np.mean([record["prediction_foreground_fraction"] for record in records])
         ),
     }
+    if all("mean_foreground_probability" in record for record in records):
+        summary["mean_foreground_probability"] = float(
+            np.mean([record["mean_foreground_probability"] for record in records])
+        )
+    if all("mean_prediction_confidence" in record for record in records):
+        summary["mean_prediction_confidence"] = float(
+            np.mean([record["mean_prediction_confidence"] for record in records])
+        )
+    return summary

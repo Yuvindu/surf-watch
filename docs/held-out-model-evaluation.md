@@ -5,7 +5,8 @@
 `scripts/evaluate_held_out_models.py` compares registered segmentation models on
 the same labelled RipVIS validation frames. It complements the video-level
 baseline-versus-MARSP workflow by measuring semantic accuracy against ground
-truth before temporal processing or ensemble fusion is introduced.
+truth independently of MARSP temporal processing. It can optionally append a
+probability-fusion ensemble to the same component-model evaluation.
 
 The public RipVIS test split has no public ground-truth masks. Quantitative
 metrics therefore use the official video-separated validation split; test
@@ -60,8 +61,15 @@ model input size is retained in its metadata.
 - Treat `--max-frames` as a software check only unless the subset protocol was
   specified before evaluation.
 
-The next experiment layer can use the same aligned frame selection for
-equal-weight and validation-tuned probability fusion.
+The ensemble path reuses this exact aligned frame selection for equal-weight
+probability fusion. Any later tuned-weight experiment must retain the same
+selection and document the tuning boundary explicitly.
+
+Use `--ensemble` to append a source-aligned probability-fusion result to the
+same component-model run. Equal weighting is the default; explicit
+`--model-weight MODEL=WEIGHT` values must cover every component. See
+[`ensemble-fusion.md`](ensemble-fusion.md) for validation rules, provenance,
+and the formal SCRUM-86 experiment command.
 
 The first complete matched evaluation is recorded in
 `docs/experiments/held_out_model_evaluation_01.md`.

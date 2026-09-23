@@ -27,6 +27,11 @@ from src.evaluation.segmentation_metrics import (
 )
 from src.models.adapter_factory import build_segmentation_adapter
 from src.models.model_registry import get_segmentation_model_option
+from src.models.probability_ensemble import (
+    ProbabilityEnsembleAdapter,
+    normalize_model_weights,
+    resolve_model_weights,
+)
 
 
 RUN_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
@@ -48,6 +53,12 @@ class ModelEvaluationSpec:
     checkpoint: Path
 
 
+@dataclass(frozen=True)
+class ModelWeightSpec:
+    model: str
+    weight: float
+
+
 def parse_model_checkpoint(value: str) -> ModelEvaluationSpec:
     if "=" not in value:
         raise argparse.ArgumentTypeError(
@@ -64,6 +75,25 @@ def parse_model_checkpoint(value: str) -> ModelEvaluationSpec:
         model=model,
         checkpoint=Path(checkpoint_value.strip()).expanduser().resolve(),
     )
+
+
+def parse_model_weight(value: str) -> ModelWeightSpec:
+    if "=" not in value:
+        raise argparse.ArgumentTypeError("model weight must use MODEL=WEIGHT format")
+    model_value, weight_value = value.split("=", 1)
+    try:
+        model = get_segmentation_model_option(model_value).id
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
+    try:
+        weight = float(weight_value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("model weight must be a number") from exc
+    if not np.isfinite(weight):
+        raise argparse.ArgumentTypeError("model weight must be finite")
+    if weight < 0.0:
+        raise argparse.ArgumentTypeError("model weight cannot be negative")
+    return ModelWeightSpec(model=model, weight=weight)
 
 
 def validate_run_name(value: str) -> str:
@@ -161,8 +191,93 @@ def code_provenance() -> dict:
             "metrics": file_identity(
                 str(repository_root / "src/evaluation/segmentation_metrics.py")
             ),
+            "ensemble": file_identity(
+                str(repository_root / "src/models/probability_ensemble.py")
+            ),
         },
     }
+
+
+def evaluate_adapter_predictions(
+    model_name: str,
+    adapter,
+    samples: list[dict],
+) -> tuple[list[dict], list[dict]]:
+    records = []
+    total = len(samples)
+    for sample_number, sample in enumerate(samples, start=1):
+        frame = cv2.imread(str(sample["image_path"]), cv2.IMREAD_COLOR)
+        target = cv2.imread(str(sample["mask_path"]), cv2.IMREAD_GRAYSCALE)
+        if frame is None:
+            raise ValueError(f"Could not read image: {sample['image_path']}")
+        if target is None:
+            raise ValueError(f"Could not read mask: {sample['mask_path']}")
+        target = (target > 0).astype(np.uint8)
+
+        result = adapter.predict(frame)
+        prediction = result.binary_mask
+        probability_map = result.probability_map
+        if prediction.shape != target.shape:
+            raise ValueError(
+                f"Prediction shape {prediction.shape} does not match target "
+                f"shape {target.shape} for {sample['image_path'].name}"
+            )
+        if probability_map.shape != target.shape:
+            raise ValueError(
+                f"Probability shape {probability_map.shape} does not match target "
+                f"shape {target.shape} for {sample['image_path'].name}"
+            )
+        if not np.all(np.isfinite(probability_map)):
+            raise ValueError(
+                f"Probability map contains non-finite values for "
+                f"{sample['image_path'].name}"
+            )
+        if probability_map.size and (
+            float(probability_map.min()) < 0.0
+            or float(probability_map.max()) > 1.0
+        ):
+            raise ValueError(
+                f"Probability map is outside [0, 1] for {sample['image_path'].name}"
+            )
+
+        confusion = binary_confusion(prediction, target)
+        pixel_count = int(target.size)
+        target_positive = int(target.sum())
+        prediction_positive = int(prediction.sum())
+        records.append(
+            {
+                "model": model_name,
+                "video_id": sample["video_id"],
+                "frame_index": sample["frame_index"],
+                "filename": sample["image_path"].name,
+                "pixel_count": pixel_count,
+                "ground_truth_positive_pixels": target_positive,
+                "prediction_positive_pixels": prediction_positive,
+                "ground_truth_foreground_fraction": target_positive / pixel_count,
+                "prediction_foreground_fraction": prediction_positive / pixel_count,
+                "mean_foreground_probability": float(np.mean(probability_map)),
+                "mean_prediction_confidence": float(
+                    np.mean(np.maximum(probability_map, 1.0 - probability_map))
+                ),
+                "confusion": confusion,
+                "metrics": metrics_from_confusion(confusion),
+            }
+        )
+        if sample_number % 100 == 0 or sample_number == total:
+            print(f"[{model_name}] evaluated {sample_number}/{total} frames", flush=True)
+
+    by_video = defaultdict(list)
+    for record in records:
+        by_video[record["video_id"]].append(record)
+    video_records = [
+        {
+            "model": model_name,
+            "video_id": video_id,
+            **summarize_records(records_for_video),
+        }
+        for video_id, records_for_video in sorted(by_video.items())
+    ]
+    return records, video_records
 
 
 def evaluate_model(
@@ -190,58 +305,9 @@ def evaluate_model(
             config=BaselineConfig(),
             threshold=threshold,
         )
-        records = []
-        total = len(samples)
-        for sample_number, sample in enumerate(samples, start=1):
-            frame = cv2.imread(str(sample["image_path"]), cv2.IMREAD_COLOR)
-            target = cv2.imread(str(sample["mask_path"]), cv2.IMREAD_GRAYSCALE)
-            if frame is None:
-                raise ValueError(f"Could not read image: {sample['image_path']}")
-            if target is None:
-                raise ValueError(f"Could not read mask: {sample['mask_path']}")
-            target = (target > 0).astype(np.uint8)
-
-            result = adapter.predict(frame)
-            prediction = result.binary_mask
-            if prediction.shape != target.shape:
-                raise ValueError(
-                    f"Prediction shape {prediction.shape} does not match target "
-                    f"shape {target.shape} for {sample['image_path'].name}"
-                )
-
-            confusion = binary_confusion(prediction, target)
-            pixel_count = int(target.size)
-            target_positive = int(target.sum())
-            prediction_positive = int(prediction.sum())
-            records.append(
-                {
-                    "model": spec.model,
-                    "video_id": sample["video_id"],
-                    "frame_index": sample["frame_index"],
-                    "filename": sample["image_path"].name,
-                    "pixel_count": pixel_count,
-                    "ground_truth_positive_pixels": target_positive,
-                    "prediction_positive_pixels": prediction_positive,
-                    "ground_truth_foreground_fraction": target_positive / pixel_count,
-                    "prediction_foreground_fraction": prediction_positive / pixel_count,
-                    "confusion": confusion,
-                    "metrics": metrics_from_confusion(confusion),
-                }
-            )
-            if sample_number % 100 == 0 or sample_number == total:
-                print(f"[{spec.model}] evaluated {sample_number}/{total} frames", flush=True)
-
-        by_video = defaultdict(list)
-        for record in records:
-            by_video[record["video_id"]].append(record)
-        video_records = [
-            {
-                "model": spec.model,
-                "video_id": video_id,
-                **summarize_records(records_for_video),
-            }
-            for video_id, records_for_video in sorted(by_video.items())
-        ]
+        records, video_records = evaluate_adapter_predictions(
+            spec.model, adapter, samples
+        )
         return {
             "model": spec.model,
             "status": "success",
@@ -265,6 +331,97 @@ def evaluate_model(
         }
 
 
+def evaluate_ensemble(
+    specs: list[ModelEvaluationSpec],
+    weights: dict[str, float],
+    samples: list[dict],
+    device: torch.device,
+    threshold: float,
+) -> dict:
+    started_at = time.perf_counter()
+    normalized_weights = normalize_model_weights(weights)
+    components = [
+        {
+            "model": spec.model,
+            "weight": weights[spec.model],
+            "normalized_weight": normalized_weights[spec.model],
+            "checkpoint": (
+                file_identity(str(spec.checkpoint))
+                if spec.checkpoint.is_file()
+                else {"path": str(spec.checkpoint), "missing": True}
+            ),
+        }
+        for spec in specs
+    ]
+    missing = [spec for spec in specs if not spec.checkpoint.is_file()]
+    if missing:
+        return {
+            "model": "ensemble",
+            "status": "failed",
+            "error": "Missing component checkpoint(s): "
+            + ", ".join(f"{spec.model}={spec.checkpoint}" for spec in missing),
+            "runtime_seconds": time.perf_counter() - started_at,
+            "fusion": {
+                "method": "weighted_probability_mean",
+                "threshold": threshold,
+                "weights": weights,
+                "normalized_weights": normalized_weights,
+                "components": components,
+            },
+            "frame_records": [],
+            "video_records": [],
+        }
+
+    try:
+        adapters = {
+            spec.model: build_segmentation_adapter(
+                model_name=spec.model,
+                checkpoint_path=str(spec.checkpoint),
+                device=device,
+                config=BaselineConfig(),
+                threshold=threshold,
+            )
+            for spec in specs
+        }
+        adapter = ProbabilityEnsembleAdapter(adapters, weights, threshold)
+        records, video_records = evaluate_adapter_predictions(
+            "ensemble", adapter, samples
+        )
+        return {
+            "model": "ensemble",
+            "status": "success",
+            "error": None,
+            "fusion": {
+                "method": "weighted_probability_mean",
+                "threshold": threshold,
+                "weights": weights,
+                "normalized_weights": normalized_weights,
+                "components": components,
+            },
+            "adapter_metadata": asdict(adapter.metadata()),
+            "runtime_seconds": time.perf_counter() - started_at,
+            "summary": summarize_records(records),
+            "frame_records": records,
+            "video_records": video_records,
+        }
+    except Exception as exc:
+        return {
+            "model": "ensemble",
+            "status": "failed",
+            "error": f"{type(exc).__name__}: {exc}",
+            "runtime_seconds": time.perf_counter() - started_at,
+            "fusion": {
+                "method": "weighted_probability_mean",
+                "threshold": threshold,
+                "weights": weights,
+                "normalized_weights": normalized_weights,
+                "components": components,
+            },
+            "frame_records": [],
+            "video_records": [],
+        }
+
+
 def _flatten_summary(prefix: str, summary: dict) -> dict:
     row = {
         "frame_count": summary["frame_count"],
@@ -280,6 +437,9 @@ def _flatten_summary(prefix: str, summary: dict) -> dict:
     for aggregation in ("micro", "macro_per_frame"):
         for metric in METRIC_NAMES:
             row[f"{prefix}{aggregation}_{metric}"] = summary[aggregation][metric]
+    for metric in ("mean_foreground_probability", "mean_prediction_confidence"):
+        if metric in summary:
+            row[f"{prefix}{metric}"] = summary[metric]
     return row
 
 
@@ -317,6 +477,8 @@ def write_artifacts(output_dir: Path, payload: dict) -> tuple[Path, Path, Path]:
                     "prediction_positive_pixels",
                     "ground_truth_foreground_fraction",
                     "prediction_foreground_fraction",
+                    "mean_foreground_probability",
+                    "mean_prediction_confidence",
                 )
             }
             row.update(record["confusion"])
@@ -384,6 +546,18 @@ def main() -> int:
     parser.add_argument("--processed-root", default="data/processed")
     parser.add_argument("--split", choices=("val",), default="val")
     parser.add_argument("--threshold", type=float, default=0.5)
+    parser.add_argument(
+        "--ensemble",
+        action="store_true",
+        help="Evaluate a probability-fusion ensemble after the component models.",
+    )
+    parser.add_argument(
+        "--model-weight",
+        action="append",
+        type=parse_model_weight,
+        metavar="MODEL=WEIGHT",
+        help="Explicit non-negative ensemble weight. Supply every component model.",
+    )
     parser.add_argument("--video", action="append", dest="videos")
     parser.add_argument("--max-frames", type=int)
     parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
@@ -398,6 +572,21 @@ def main() -> int:
         validate_unique_models(args.model_checkpoint)
     except ValueError as exc:
         parser.error(str(exc))
+    if args.model_weight and not args.ensemble:
+        parser.error("--model-weight requires --ensemble")
+    weights = None
+    if args.ensemble:
+        try:
+            weights = resolve_model_weights(
+                [spec.model for spec in args.model_checkpoint],
+                [
+                    (weight_spec.model, weight_spec.weight)
+                    for weight_spec in (args.model_weight or [])
+                ]
+                or None,
+            )
+        except ValueError as exc:
+            parser.error(str(exc))
 
     if args.device == "cuda" and not torch.cuda.is_available():
         parser.error("CUDA was requested but is not available")
@@ -426,11 +615,21 @@ def main() -> int:
         evaluate_model(spec, samples, device, args.threshold)
         for spec in args.model_checkpoint
     ]
+    if args.ensemble:
+        results.append(
+            evaluate_ensemble(
+                args.model_checkpoint,
+                weights,
+                samples,
+                device,
+                args.threshold,
+            )
+        )
     annotation_path = (
         ripvis_root / args.split / "coco_annotations" / f"{args.split}.json"
     )
     payload = {
-        "schema_version": 1,
+        "schema_version": 2,
         "run_name": args.run_name,
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "code": code_provenance(),
@@ -452,8 +651,11 @@ def main() -> int:
             "threshold": args.threshold,
             "device": str(device),
             "evaluation_resolution": "source_frame",
+            "ensemble_enabled": args.ensemble,
+            "model_weights": weights,
         },
-        "models_requested": [spec.model for spec in args.model_checkpoint],
+        "models_requested": [spec.model for spec in args.model_checkpoint]
+        + (["ensemble"] if args.ensemble else []),
         "successful_models": [r["model"] for r in results if r["status"] == "success"],
         "failed_models": [r["model"] for r in results if r["status"] == "failed"],
         "results": results,

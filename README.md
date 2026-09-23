@@ -247,10 +247,27 @@ python scripts/evaluate_held_out_models.py \
   --model-checkpoint unet-resnet34=checkpoints/unet_resnet34_best_model.pt
 ```
 
+Add the reproducible equal-weight probability ensemble to the same matched run:
+
+```bash
+python scripts/evaluate_held_out_models.py \
+  --run-name segformer-unet-equal-fusion-val \
+  --ripvis-root ../RipVIS \
+  --processed-root data/processed \
+  --model-checkpoint segformer=checkpoints/best_model.pt \
+  --model-checkpoint unet-resnet34=checkpoints/unet_resnet34_best_model.pt \
+  --ensemble \
+  --model-weight segformer=1 \
+  --model-weight unet-resnet34=1 \
+  --threshold 0.5
+```
+
 The evaluator writes dataset-level JSON plus frame- and video-level CSV files,
 including model, checkpoint, dataset, parameter, and code-revision provenance.
 See [docs/held-out-model-evaluation.md](/Users/rashmikecaldera/Developer/curtin/CSP/surfwatch/docs/held-out-model-evaluation.md)
-for metric definitions and experiment rules.
+for metric definitions and experiment rules, and
+[docs/ensemble-fusion.md](docs/ensemble-fusion.md) for the fusion contract and
+formal experiment procedure.
 
 ## Running Temporal Aggregation
 

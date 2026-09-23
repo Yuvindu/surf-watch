@@ -102,6 +102,8 @@ class HeldOutEvaluationTests(unittest.TestCase):
                 "prediction_positive_pixels": 0,
                 "ground_truth_foreground_fraction": 0.0,
                 "prediction_foreground_fraction": 0.0,
+                "mean_foreground_probability": 0.1,
+                "mean_prediction_confidence": 0.9,
             },
             {
                 "confusion": positive_confusion,
@@ -110,6 +112,8 @@ class HeldOutEvaluationTests(unittest.TestCase):
                 "prediction_positive_pixels": 4,
                 "ground_truth_foreground_fraction": 1.0,
                 "prediction_foreground_fraction": 1.0,
+                "mean_foreground_probability": 0.8,
+                "mean_prediction_confidence": 0.8,
             },
         ]
         summary = summarize_records(records)
@@ -117,6 +121,8 @@ class HeldOutEvaluationTests(unittest.TestCase):
         self.assertEqual(summary["empty_ground_truth_frames"], 1)
         self.assertAlmostEqual(summary["macro_per_frame"]["foreground_iou"], 1.0)
         self.assertAlmostEqual(summary["micro"]["foreground_iou"], 1.0)
+        self.assertAlmostEqual(summary["mean_foreground_probability"], 0.45)
+        self.assertAlmostEqual(summary["mean_prediction_confidence"], 0.85)
 
 
 if __name__ == "__main__":
