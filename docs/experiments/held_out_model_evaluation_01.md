@@ -2,7 +2,10 @@
 
 ## Status
 
-Completed on 17 September 2026.
+Completed on 17 September 2026 and invalidated for model-performance comparison
+on 23 September 2026 because the SegFormer checkpoint provenance did not match
+the documented Phase 1 best checkpoint. The run remains useful as evaluator
+software-validation evidence.
 
 ## Objective
 
@@ -77,6 +80,16 @@ evidence that probability-level fusion is worth evaluating rather than simply
 discarding SegFormer.
 
 ## Interpretation
+
+### Provenance correction
+
+The evaluated SegFormer checkpoint reports epoch 1 and has SHA-256
+`fceaf655fa33e9f8fb13094ca7fd6dcbe83dbc78cef0d7d9a3c4af3c8fc844b7`.
+The Phase 1 experiment record identifies epoch 4 as the selected checkpoint,
+but that artifact was deleted with the original RunPod persistent volume. The
+SegFormer figures in this run must therefore not be attributed to the Phase 1
+best model or used as the component baseline for ensemble fusion. A controlled
+SegFormer reproduction and replacement held-out run are required.
 
 U-Net is the stronger model overall and is especially precise, but its recall
 of 0.4500 and lower predicted foreground fraction show that it still misses a

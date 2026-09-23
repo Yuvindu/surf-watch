@@ -136,16 +136,35 @@ python scripts/test_dataloader.py
 
 ## Baseline Training
 
-Train the SegFormer baseline using the current configuration in `configs/baseline_config.py`:
+Train the SegFormer baseline with an isolated artifact directory:
 
 ```bash
-python scripts/train_baseline.py
+python scripts/train_baseline.py \
+  --ripvis-root ../RipVIS \
+  --processed-root data/processed \
+  --run-dir outputs/training/segformer_reproduction_02 \
+  --image-size 512 \
+  --batch-size 4 \
+  --epochs 5 \
+  --learning-rate 1e-4 \
+  --weight-decay 1e-4 \
+  --seed 42
 ```
 
 This produces:
 
-- checkpoints under `checkpoints/`
-- prediction comparison outputs under `outputs/predictions/`
+- an immutable checkpoint for every completed epoch
+- explicit best and last checkpoint aliases
+- validation prediction comparisons
+- an incrementally written training manifest containing configuration,
+  environment, dataset annotation hashes, metric history, smoke-inference
+  evidence, and checkpoint hashes
+
+The command refuses to use a non-empty run directory, preventing a later run
+from silently replacing an earlier checkpoint. The original Phase 1 epoch-4
+checkpoint is no longer available, so its metrics remain historical evidence;
+the controlled replacement procedure is documented in
+[docs/segformer-reproduction-training.md](docs/segformer-reproduction-training.md).
 
 ## U-Net ResNet34 Training
 
