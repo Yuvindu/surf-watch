@@ -72,7 +72,12 @@ def estimate_partial_affine_transform(
         return None, info
 
     raw_matches = matcher.knnMatch(des1, des2, k=2)
-    good = [m for m, n in raw_matches if m.distance < config.match_ratio_thresh * n.distance]
+    good = [
+        pair[0]
+        for pair in raw_matches
+        if len(pair) == 2
+        and pair[0].distance < config.match_ratio_thresh * pair[1].distance
+    ]
     info["good_matches"] = len(good)
 
     if len(good) < config.min_good_matches:
