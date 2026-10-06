@@ -130,5 +130,9 @@ Each run writes:
 - `marsp_ablation_video_metrics.csv`, containing semantic, temporal, and runtime
   summaries for each configuration and video.
 
-Generated outputs remain excluded from Git. Copy the complete run directory to
+Most generated outputs remain excluded from Git. The full SCRUM-87 validation
+run is an explicitly versioned exception, with its three result files under
+`outputs/marsp_ablation/marsp-ablation-val-full-20261001/`. See the
+[formal experiment record](experiments/marsp_ablation_01.md) for results,
+limitations, and artifact hashes. Copy any other complete run directory to
 persistent or local storage before stopping a cloud instance.

@@ -307,6 +307,14 @@ See [docs/marsp-ablation.md](docs/marsp-ablation.md) for the matrix definition,
 metric contract, runtime accounting, coordinate-alignment boundary, and smoke
 test procedure.
 
+The full 4,349-frame validation run found fixed smoothing (A3) had the highest
+foreground IoU (0.5063 versus 0.5027 for raw SegFormer) and consecutive-mask
+IoU (0.8859 versus 0.7867). Motion-adaptive weighting improved foreground IoU
+less (+0.0016), while component cleanup nearly eliminated small components
+without a meaningful IoU change. See the
+[formal ablation record](docs/experiments/marsp_ablation_01.md) for the complete
+matrix, limitations, and artifact hashes.
+
 ## Running Temporal Aggregation
 
 Run temporal aggregation over a probability video:
