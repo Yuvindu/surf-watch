@@ -315,6 +315,15 @@ without a meaningful IoU change. See the
 [formal ablation record](docs/experiments/marsp_ablation_01.md) for the complete
 matrix, limitations, and artifact hashes.
 
+## Evaluating Confidence and Model Uncertainty
+
+Run the SCRUM-88 evaluator with the verified SegFormer and U-Net checkpoints to
+measure probability reliability, predictive entropy, and model disagreement on
+matched validation frames. It writes aggregate, video, frame, and reliability-bin
+artifacts without fitting a calibration transform. See
+[docs/model-uncertainty.md](docs/model-uncertainty.md) for commands, metric
+definitions, and the validation-only interpretation boundary.
+
 ## Running Temporal Aggregation
 
 Run temporal aggregation over a probability video:
