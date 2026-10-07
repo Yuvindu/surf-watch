@@ -182,6 +182,36 @@ def threshold_probability_maps(
     return masks
 
 
+def remove_small_components(mask: np.ndarray, min_component_area: int) -> np.ndarray:
+    """Remove foreground components smaller than ``min_component_area`` pixels."""
+    if mask.ndim != 2:
+        raise ValueError("mask must be a 2D array")
+    if min_component_area < 0:
+        raise ValueError("min_component_area cannot be negative")
+
+    binary = (mask > 0).astype(np.uint8)
+    if min_component_area <= 1:
+        return binary
+
+    component_count, labels, stats, _ = cv2.connectedComponentsWithStats(
+        binary,
+        connectivity=8,
+    )
+    cleaned = binary.copy()
+    for component_id in range(1, component_count):
+        area = int(stats[component_id, cv2.CC_STAT_AREA])
+        if area < min_component_area:
+            cleaned[labels == component_id] = 0
+    return cleaned
+
+
+def remove_small_components_from_masks(
+    masks: List[np.ndarray],
+    min_component_area: int,
+) -> List[np.ndarray]:
+    return [remove_small_components(mask, min_component_area) for mask in masks]
+
+
 def save_mask_video(
     masks: List[np.ndarray],
     output_path: str,

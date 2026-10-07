@@ -264,7 +264,7 @@ python scripts/evaluate_held_out_models.py \
 
 The evaluator writes dataset-level JSON plus frame- and video-level CSV files,
 including model, checkpoint, dataset, parameter, and code-revision provenance.
-See [docs/held-out-model-evaluation.md](/Users/rashmikecaldera/Developer/curtin/CSP/surfwatch/docs/held-out-model-evaluation.md)
+See [docs/held-out-model-evaluation.md](docs/held-out-model-evaluation.md)
 for metric definitions and experiment rules, and
 [docs/ensemble-fusion.md](docs/ensemble-fusion.md) for the fusion contract and
 formal experiment procedure.
@@ -273,6 +273,47 @@ The first complete equal-weight run achieved foreground IoU 0.4701, improving
 on U-Net's 0.4201 but not SegFormer's 0.5027. The ensemble was nevertheless the
 best model on 8 of 36 videos. The formal result and artifact hashes are recorded
 in [docs/experiments/ensemble_fusion_01.md](docs/experiments/ensemble_fusion_01.md).
+
+## Running The MARSP Ablation Matrix
+
+Run the predeclared A0-A6 model and MARSP ablation matrix on identical labelled
+validation frames:
+
+```bash
+python scripts/evaluate_marsp_ablation.py \
+  --run-name marsp-ablation-val-full \
+  --ripvis-root ../RipVIS \
+  --processed-root data/processed \
+  --model-checkpoint segformer=checkpoints/best_model.pt \
+  --model-checkpoint unet-resnet34=checkpoints/unet_resnet34_best_model.pt \
+  --model-weight segformer=1 \
+  --model-weight unet-resnet34=1 \
+  --selected-model-path segformer \
+  --window-size 5 \
+  --threshold 0.5 \
+  --min-component-area 500 \
+  --device cuda
+```
+
+The runner evaluates the two frame-level models, their equal-weight ensemble,
+fixed temporal smoothing, motion-adaptive weighting, component cleanup, and the
+combined source-coordinate temporal path. It loads one video at a time and reuses model
+probabilities across configurations. Results are written under
+`outputs/marsp_ablation/<run-name>/` as a JSON summary plus frame- and
+video-level CSV files. Temporal processing and stability scoring do not cross
+gaps larger than six source frames.
+
+See [docs/marsp-ablation.md](docs/marsp-ablation.md) for the matrix definition,
+metric contract, runtime accounting, coordinate-alignment boundary, and smoke
+test procedure.
+
+The full 4,349-frame validation run found fixed smoothing (A3) had the highest
+foreground IoU (0.5063 versus 0.5027 for raw SegFormer) and consecutive-mask
+IoU (0.8859 versus 0.7867). Motion-adaptive weighting improved foreground IoU
+less (+0.0016), while component cleanup nearly eliminated small components
+without a meaningful IoU change. See the
+[formal ablation record](docs/experiments/marsp_ablation_01.md) for the complete
+matrix, limitations, and artifact hashes.
 
 ## Running Temporal Aggregation
 
