@@ -93,3 +93,7 @@ temperature or selecting weights from these outputs would be a different,
 predeclared experiment with a video-disjoint assessment boundary. The public
 test split has no released quantitative masks; do not claim quantitative test
 performance from it.
+
+The complete 7 October run and artifact hashes are recorded in the
+[formal experiment record](experiments/model_uncertainty_01.md). Generated
+artifacts remain excluded from Git and must be retained separately.

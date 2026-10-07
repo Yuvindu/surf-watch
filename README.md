@@ -324,6 +324,13 @@ artifacts without fitting a calibration transform. See
 [docs/model-uncertainty.md](docs/model-uncertainty.md) for commands, metric
 definitions, and the validation-only interpretation boundary.
 
+The full 4,349-frame validation run found the equal-weight ensemble had the
+lowest pooled Brier score (0.02581), NLL (0.12287), and foreground ECE
+(0.01787). SegFormer still had the lowest per-video Brier score more often and
+remains the stronger fixed-threshold segmentation path. See the
+[formal uncertainty result](docs/experiments/model_uncertainty_01.md) for the
+matched comparison, limitations, and artifact hashes.
+
 ## Running Temporal Aggregation
 
 Run temporal aggregation over a probability video:
