@@ -85,4 +85,18 @@ rsync -rc --partial -e "ssh -p PORT -i ~/.ssh/id_ed25519" \
   root@RUNPOD_HOST:/workspace/RipVIS/train/sampled_images/sampled_images/
 ```
 
-Before terminating a paid pod, copy the best and last checkpoints, manifest, prediction samples, and training log back to local storage. Stopping the pod ends active GPU charges; the network volume remains persistent and separately billed until deleted.
+Before terminating a paid pod, copy the complete run directory, including every
+epoch checkpoint, best and last aliases, manifest, and prediction samples, back
+to local storage. Verify the copied checkpoint hashes against the manifest
+before deleting either the pod or its persistent volume. Stopping the pod ends
+active GPU charges; the network volume remains persistent and separately billed
+until deleted.
+
+```bash
+python scripts/verify_training_artifacts.py path/to/training_manifest.json
+```
+
+Do not train into the shared `checkpoints/` directory. Use a distinct run-scoped
+output location for each experiment. The SegFormer trainer additionally refuses
+to use a non-empty run directory. Its reproduction procedure is documented in
+[`segformer-reproduction-training.md`](segformer-reproduction-training.md).

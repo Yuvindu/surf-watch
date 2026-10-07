@@ -136,16 +136,42 @@ python scripts/test_dataloader.py
 
 ## Baseline Training
 
-Train the SegFormer baseline using the current configuration in `configs/baseline_config.py`:
+Train the SegFormer baseline with an isolated artifact directory:
 
 ```bash
-python scripts/train_baseline.py
+python scripts/train_baseline.py \
+  --ripvis-root ../RipVIS \
+  --processed-root data/processed \
+  --run-dir outputs/training/segformer_reproduction_02 \
+  --image-size 512 \
+  --batch-size 4 \
+  --epochs 5 \
+  --learning-rate 1e-4 \
+  --weight-decay 1e-4 \
+  --seed 42
 ```
 
 This produces:
 
-- checkpoints under `checkpoints/`
-- prediction comparison outputs under `outputs/predictions/`
+- an immutable checkpoint for every completed epoch
+- explicit best and last checkpoint aliases
+- validation prediction comparisons
+- an incrementally written training manifest containing configuration,
+  environment, dataset annotation hashes, metric history, smoke-inference
+  evidence, and checkpoint hashes
+
+The command refuses to use a non-empty run directory, preventing a later run
+from silently replacing an earlier checkpoint. The original Phase 1 epoch-4
+checkpoint is no longer available, so its metrics remain historical evidence;
+the controlled replacement procedure is documented in
+[docs/segformer-reproduction-training.md](docs/segformer-reproduction-training.md).
+
+The replacement run completed on 23 September 2026 and selected epoch 4 at
+validation IoU 0.7565. Its checkpoint and complete run artifacts were verified
+after local transfer, and the checkpoint is installed at the runtime path
+`checkpoints/best_model.pt`. The corrected source-resolution comparison achieved
+foreground IoU 0.5027 for SegFormer and 0.4201 for U-Net; see
+[docs/experiments/segformer_reproduction_02.md](docs/experiments/segformer_reproduction_02.md).
 
 ## U-Net ResNet34 Training
 
@@ -207,6 +233,46 @@ python scripts/run_video_segmentation.py \
 ```
 
 The trained checkpoint at `checkpoints/unet_resnet34_best_model.pt` makes U-Net available through the Analyse page and the shared baseline/MARSP comparison flow. If that ignored local artifact is absent on another machine, the model registry reports U-Net as unavailable until the checkpoint is restored.
+
+## Held-Out Model Evaluation
+
+Compare registered models against the same labelled RipVIS validation frames:
+
+```bash
+python scripts/evaluate_held_out_models.py \
+  --run-name segformer-unet-val \
+  --ripvis-root ../RipVIS \
+  --processed-root data/processed \
+  --model-checkpoint segformer=checkpoints/best_model.pt \
+  --model-checkpoint unet-resnet34=checkpoints/unet_resnet34_best_model.pt
+```
+
+Add the reproducible equal-weight probability ensemble to the same matched run:
+
+```bash
+python scripts/evaluate_held_out_models.py \
+  --run-name segformer-unet-equal-fusion-val \
+  --ripvis-root ../RipVIS \
+  --processed-root data/processed \
+  --model-checkpoint segformer=checkpoints/best_model.pt \
+  --model-checkpoint unet-resnet34=checkpoints/unet_resnet34_best_model.pt \
+  --ensemble \
+  --model-weight segformer=1 \
+  --model-weight unet-resnet34=1 \
+  --threshold 0.5
+```
+
+The evaluator writes dataset-level JSON plus frame- and video-level CSV files,
+including model, checkpoint, dataset, parameter, and code-revision provenance.
+See [docs/held-out-model-evaluation.md](/Users/rashmikecaldera/Developer/curtin/CSP/surfwatch/docs/held-out-model-evaluation.md)
+for metric definitions and experiment rules, and
+[docs/ensemble-fusion.md](docs/ensemble-fusion.md) for the fusion contract and
+formal experiment procedure.
+
+The first complete equal-weight run achieved foreground IoU 0.4701, improving
+on U-Net's 0.4201 but not SegFormer's 0.5027. The ensemble was nevertheless the
+best model on 8 of 36 videos. The formal result and artifact hashes are recorded
+in [docs/experiments/ensemble_fusion_01.md](docs/experiments/ensemble_fusion_01.md).
 
 ## Running Temporal Aggregation
 
