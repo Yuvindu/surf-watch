@@ -331,6 +331,9 @@ remains the stronger fixed-threshold segmentation path. See the
 [formal uncertainty result](docs/experiments/model_uncertainty_01.md) for the
 matched comparison, limitations, and artifact hashes.
 
+For the consolidated Phase 2 research status, selected configuration, and
+remaining evidence boundary, see [the research closeout](docs/phase2-research-closeout.md).
+
 ## Running Temporal Aggregation
 
 Run temporal aggregation over a probability video:
