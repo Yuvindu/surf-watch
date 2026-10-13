@@ -12,6 +12,8 @@ from src.models.adapter_factory import (
     SUPPORTED_SEGMENTATION_MODELS,
     build_segmentation_adapter,
 )
+from src.models.model_registry import get_segmentation_model_option
+from src.models.probability_ensemble import ProbabilityEnsembleAdapter
 from src.training.utils import get_device
 
 
@@ -26,37 +28,65 @@ def make_overlay(frame: np.ndarray, mask: np.ndarray, alpha: float = 0.35) -> np
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", required=True, help="Path to input video")
-    parser.add_argument("--checkpoint", required=True, help="Path to trained checkpoint")
+    parser.add_argument("--checkpoint", help="Path to trained checkpoint")
+    parser.add_argument("--ensemble-checkpoint", action="append", default=[], metavar="MODEL=CHECKPOINT")
     parser.add_argument("--output-overlay", required=True, help="Path to output overlay video")
     parser.add_argument("--output-mask", required=True, help="Path to output mask video")
     parser.add_argument("--output-prob", required=True, help="Path to output probability video")
     parser.add_argument(
         "--model",
         default="segformer",
-        choices=SUPPORTED_SEGMENTATION_MODELS,
+        choices=(*SUPPORTED_SEGMENTATION_MODELS, "ensemble"),
         help="Segmentation model adapter to use",
     )
     parser.add_argument("--threshold", type=float, default=0.5, help="Threshold for converting rip-current probabilities into a binary mask")
     args = parser.parse_args()
 
+    if args.model == "ensemble":
+        if args.checkpoint or len(args.ensemble_checkpoint) < 2:
+            parser.error("ensemble requires at least two --ensemble-checkpoint values and no --checkpoint")
+        component_paths = {}
+        for value in args.ensemble_checkpoint:
+            if "=" not in value:
+                parser.error("--ensemble-checkpoint must use MODEL=CHECKPOINT")
+            model_name, checkpoint_path = value.split("=", 1)
+            try:
+                model_name = get_segmentation_model_option(model_name).id
+            except ValueError as exc:
+                parser.error(str(exc))
+            if not checkpoint_path or model_name in component_paths:
+                parser.error("ensemble checkpoint paths must be non-empty and models unique")
+            component_paths[model_name] = checkpoint_path
+    elif not args.checkpoint or args.ensemble_checkpoint:
+        parser.error("a single model requires --checkpoint and no --ensemble-checkpoint")
+
     config = BaselineConfig()
     device = get_device()
 
     print(f"Using device: {device}")
-    print(f"Loading checkpoint: {args.checkpoint}")
+    print(f"Loading checkpoint: {args.checkpoint or component_paths}")
     print(f"Mask threshold: {args.threshold}")
 
     Path(args.output_overlay).parent.mkdir(parents=True, exist_ok=True)
     Path(args.output_mask).parent.mkdir(parents=True, exist_ok=True)
     Path(args.output_prob).parent.mkdir(parents=True, exist_ok=True)
 
-    adapter = build_segmentation_adapter(
-        model_name=args.model,
-        checkpoint_path=args.checkpoint,
-        device=device,
-        config=config,
-        threshold=args.threshold,
-    )
+    if args.model == "ensemble":
+        components = {
+            name: build_segmentation_adapter(name, path, device, config, args.threshold)
+            for name, path in component_paths.items()
+        }
+        adapter = ProbabilityEnsembleAdapter(
+            components, {name: 1.0 for name in components}, threshold=args.threshold
+        )
+    else:
+        adapter = build_segmentation_adapter(
+            model_name=args.model,
+            checkpoint_path=args.checkpoint,
+            device=device,
+            config=config,
+            threshold=args.threshold,
+        )
     metadata = adapter.metadata()
     print(f"Segmentation adapter: {metadata.name}")
     print(f"Adapter input size: {metadata.input_size}")

@@ -10,6 +10,10 @@ import Divider from '@mui/material/Divider';
 import Slider from '@mui/material/Slider';
 import TextField from '@mui/material/TextField';
 import MenuItem from '@mui/material/MenuItem';
+import ToggleButton from '@mui/material/ToggleButton';
+import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
+import Checkbox from '@mui/material/Checkbox';
+import FormControlLabel from '@mui/material/FormControlLabel';
 import DeleteIcon from '@mui/icons-material/Delete';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import FileUploader from '../components/FileUploader';
@@ -17,7 +21,7 @@ import StatusStepper from '../components/StatusStepper';
 import { useFileHandler } from '../hooks/useFileHandler';
 import { useDemoPredict } from '../hooks/useDemoPredict';
 import { AnalysisContext } from '../context/AnalysisContext';
-import { normalizeCaseResponse } from '../models/analysis';
+import { normalizeCaseResponse, type ComparisonMode } from '../models/analysis';
 import { COMPARISON_PIPELINE_STAGES, PIPELINE_STAGES } from '../services/mockApi';
 import { formatFileSize, generateId } from '../utils/helpers';
 import { fetchSegmentationModels, type SegmentationModelOption } from '../services/comparisonApi';
@@ -31,6 +35,8 @@ export default function AnalysePage() {
   const [windowSize, setWindowSize] = useState(5);
   const [threshold, setThreshold] = useState(0.5);
   const [model, setModel] = useState('segformer');
+  const [mode, setMode] = useState<ComparisonMode>('single');
+  const [selectedModels, setSelectedModels] = useState<string[]>([]);
   const [modelOptions, setModelOptions] = useState<SegmentationModelOption[]>([]);
   const [modelError, setModelError] = useState<string | null>(null);
 
@@ -41,6 +47,7 @@ export default function AnalysePage() {
         if (!isActive) return;
         setModelOptions(data.models);
         setModel(data.defaultModel);
+        setSelectedModels(data.models.filter(option => option.available).map(option => option.id));
         setModelError(null);
       })
       .catch(err => {
@@ -59,8 +66,12 @@ export default function AnalysePage() {
   const isShowingPersistedProcessing = !isProcessing && !!activeProcessingCase;
   const displayedStage = isShowingPersistedProcessing ? activeProcessingCase.currentStage : currentStage;
   const displayedTask = isShowingPersistedProcessing ? activeProcessingCase.currentTask : currentTask;
+  const displayedMode = isShowingPersistedProcessing ? activeProcessingCase.mode : mode;
   const displayedUploadType = uploadFile?.fileType ?? activeProcessingCase?.upload.fileType;
   const activeStages = displayedUploadType === 'video' ? COMPARISON_PIPELINE_STAGES : PIPELINE_STAGES;
+  const canRunVideo = mode === 'multi'
+    ? selectedModels.length >= 2 && selectedModels.every(id => modelOptions.some(option => option.id === id && option.available))
+    : modelOptions.some(option => option.id === model && option.available);
 
   async function handleRun() {
     if (!uploadFile) return;
@@ -76,10 +87,12 @@ export default function AnalysePage() {
       createdAt: new Date().toISOString(),
       windowSize: uploadFile.fileType === 'video' ? windowSize : undefined,
       threshold: uploadFile.fileType === 'video' ? threshold : undefined,
-      model: uploadFile.fileType === 'video' ? model : undefined,
+      mode: uploadFile.fileType === 'video' ? mode : undefined,
+      model: uploadFile.fileType === 'video' && mode === 'single' ? model : undefined,
+      models: uploadFile.fileType === 'video' && mode === 'multi' ? selectedModels : undefined,
     });
     if (uploadFile.fileType === 'video') {
-      const response = await runComparison(uploadFile, { model, windowSize, threshold }, partial => {
+      const response = await runComparison(uploadFile, { mode, model, models: selectedModels, windowSize, threshold }, partial => {
         updateCase(caseId, partial);
       });
       if (response && caseIdRef.current) {
@@ -184,8 +197,22 @@ export default function AnalysePage() {
                 <Typography variant="subtitle2" fontWeight={700} mb={1}>
                   Comparison parameters
                 </Typography>
+                <ToggleButtonGroup
+                  exclusive
+                  size="small"
+                  fullWidth
+                  value={mode}
+                  onChange={(_event, nextMode: ComparisonMode | null) => {
+                    if (nextMode) setMode(nextMode);
+                  }}
+                  aria-label="Comparison mode"
+                  sx={{ mb: 2 }}
+                >
+                  <ToggleButton value="single">Single model</ToggleButton>
+                  <ToggleButton value="multi">Compare models</ToggleButton>
+                </ToggleButtonGroup>
                 <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' } }}>
-                  <Box sx={{ gridColumn: { sm: '1 / -1' } }}>
+                  {mode === 'single' ? <Box sx={{ gridColumn: { sm: '1 / -1' } }}>
                     <Typography variant="caption" color="text.secondary" display="block" mb={0.5}>
                       Segmentation model
                     </Typography>
@@ -203,7 +230,36 @@ export default function AnalysePage() {
                         </MenuItem>
                       ))}
                     </TextField>
-                  </Box>
+                  </Box> : <Box sx={{ gridColumn: { sm: '1 / -1' } }}>
+                    <Typography variant="caption" color="text.secondary" display="block" mb={0.5}>
+                      Models
+                    </Typography>
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', columnGap: 2 }}>
+                      {modelOptions.map(option => (
+                        <FormControlLabel
+                          key={option.id}
+                          control={<Checkbox
+                            size="small"
+                            checked={selectedModels.includes(option.id)}
+                            disabled={!option.available}
+                            onChange={event => setSelectedModels(current => event.target.checked
+                              ? [...current, option.id]
+                              : current.filter(id => id !== option.id))}
+                          />}
+                          label={option.available ? option.label : `${option.label} (checkpoint required)`}
+                        />
+                      ))}
+                      <FormControlLabel
+                        control={<Checkbox size="small" checked={selectedModels.length >= 2} disabled />}
+                        label="Equal-weight ensemble (included)"
+                      />
+                    </Box>
+                    {modelOptions.length > 0 && modelOptions.filter(option => option.available).length < 2 && (
+                      <Alert severity="info" sx={{ mt: 1 }}>
+                        Two model checkpoints are required to run a comparison.
+                      </Alert>
+                    )}
+                  </Box>}
                   <Box>
                     <Typography variant="caption" color="text.secondary" display="block" mb={0.5}>
                       Window size
@@ -247,10 +303,10 @@ export default function AnalysePage() {
               onClick={handleRun}
               disabled={
                 uploadFile.fileType === 'video'
-                && !modelOptions.some(option => option.id === model && option.available)
+                && !canRunVideo
               }
             >
-              {uploadFile.fileType === 'video' ? 'Run Baseline vs MARSP Comparison' : 'Run Detection'}
+              {uploadFile.fileType !== 'video' ? 'Run Detection' : mode === 'multi' ? 'Compare 3 Models' : 'Run Baseline vs MARSP Comparison'}
             </Button>
           </Paper>
         )}
@@ -258,8 +314,13 @@ export default function AnalysePage() {
         {(isProcessing || activeProcessingCase) && (
           <Paper sx={{ p: { xs: 2.5, sm: 3 }, bgcolor: 'background.paper' }}>
             <Typography variant="subtitle1" fontWeight={700} mb={3}>
-              Running MARSP pipeline…
+              {displayedMode === 'multi' ? 'Comparing models…' : 'Running MARSP pipeline…'}
             </Typography>
+            {activeProcessingCase?.mode === 'multi' && activeProcessingCase.currentModel && (
+              <Typography variant="body2" color="text.secondary" mb={2}>
+                Model {activeProcessingCase.modelIndex ?? 1} of {activeProcessingCase.modelCount ?? activeProcessingCase.models?.length}: {activeProcessingCase.currentModel === 'ensemble' ? 'Equal-weight ensemble' : modelOptions.find(option => option.id === activeProcessingCase.currentModel)?.label ?? activeProcessingCase.currentModel}
+              </Typography>
+            )}
             {activeProcessingCase && !uploadFile && (
               <Typography variant="body2" color="text.secondary" mb={2} sx={{ wordBreak: 'break-all' }}>
                 {activeProcessingCase.caseName ?? activeProcessingCase.upload.file.name}

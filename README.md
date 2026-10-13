@@ -478,7 +478,9 @@ rm -rf node_modules/.vite
 npm run dev -- --force
 ```
 
-See [docs/frontend-backend-comparison-flow.md](/Users/rashmikecaldera/Developer/curtin/CSP/surfwatch/docs/frontend-backend-comparison-flow.md) for the full startup steps, API contract, artifact locations, and troubleshooting notes.
+On the Analyse page, Single model uses the selected registered checkpoint. Compare models runs SegFormer, U-Net ResNet34, and their equal-weight probability ensemble on the same uploaded video. Results open with a synchronized three-way MARSP video; model tabs retain each Baseline vs MARSP comparison, temporal metrics, artifacts, and provenance. Both `checkpoints/best_model.pt` and `checkpoints/unet_resnet34_best_model.pt` are required locally. The three-way run performs additional ensemble inference, so it takes longer than the earlier two-model comparison.
+
+See [docs/frontend-backend-comparison-flow.md](docs/frontend-backend-comparison-flow.md) for the full startup steps, API contract, artifact locations, and troubleshooting notes.
 
 ## Status
 

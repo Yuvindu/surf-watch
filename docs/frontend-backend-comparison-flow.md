@@ -30,11 +30,14 @@ npm install
 cd ..
 ```
 
-The comparison flow also expects a trained checkpoint at:
+Single-model comparison needs the selected model's trained checkpoint. To compare both registered models, provide both:
 
 ```text
 checkpoints/best_model.pt
+checkpoints/unet_resnet34_best_model.pt
 ```
+
+The Analyse page lists available models from `GET /api/models`; models without local checkpoints cannot be selected. Checkpoints are local artifacts and are not included in the repository.
 
 ## Start The Backend
 
@@ -78,7 +81,7 @@ VITE_API_BASE_URL=http://127.0.0.1:8000 npm run dev
 
 1. The user opens the Analyse page in the React app.
 2. The user uploads an `.mp4` or `.webm` video.
-3. The user can adjust `window-size` and `threshold` before starting the comparison.
+3. The user chooses Single model or Compare models, selects the available model(s), and adjusts `window-size` and `threshold`.
 4. `AnalysePage` calls `runComparison` from `frontend/src/hooks/useDemoPredict.ts`.
 5. `runComparison` calls `runBaselineMarspComparison` in `frontend/src/services/comparisonApi.ts`.
 6. The frontend sends a `POST /api/comparisons` request with the uploaded file and parameters as `multipart/form-data`.
@@ -86,10 +89,12 @@ VITE_API_BASE_URL=http://127.0.0.1:8000 npm run dev
 8. The backend starts a comparison job and returns a `jobId`.
 9. The frontend polls `GET /api/comparisons/<jobId>` once per second.
 10. The backend updates `currentStage` and `currentTask` from the actual running subprocess output.
-11. The comparison script runs baseline inference, the MARSP pipeline, overlay rendering, side-by-side video generation, and metric summarisation.
+11. Single-model mode runs `run_baseline_vs_marsp_compare.py`. Compare models mode runs `run_multi_model_comparison.py` on the same upload and parameters for SegFormer, U-Net ResNet34, and an equal-weight probability ensemble. Each runs baseline inference, MARSP, rendering, and metric summarisation independently; the ensemble fuses frame-level probabilities before thresholding and MARSP temporal processing.
 12. When the job completes, the backend status response includes URLs for the generated comparison artifacts.
 13. The frontend stores the completed response in `AnalysisContext` and routes to the Results page.
-14. The Results page renders the side-by-side comparison video, baseline overlay, MARSP overlay, selected parameters, confidence summary, and metric table.
+14. The Results page opens a synchronized three-panel MARSP video, with model tabs for each Baseline vs MARSP video, an across-model temporal-consistency table, artifacts, and provenance.
+
+The in-session `AnalysisContext` retains an active job while navigating between Analyse and History. A full browser reload does not restore that in-memory history or resume polling; the backend job may still finish, but its result will not automatically reappear in the session.
 
 ## Backend API
 
@@ -102,6 +107,9 @@ Request:
 - File type: video upload
 - Optional parameter field: `windowSize`, integer from `1` to `31`, default `5`
 - Optional parameter field: `threshold`, number from `0.0` to `1.0`, default `0.5`
+- Optional field: `mode`, either `single` (default) or `multi`
+- Single mode field: `model`, registered model ID; default `segformer`
+- Multi mode field: repeated `models` values, at least two distinct registered models with available checkpoints
 
 Example response:
 
@@ -113,6 +121,8 @@ Example response:
   "status": "processing",
   "currentStage": "frame_extraction",
   "currentTask": "Saving uploaded video for processing",
+  "mode": "single",
+  "model": "segformer",
   "windowSize": 5,
   "threshold": 0.5,
   "createdAt": "2026-05-13T10:55:00+00:00",
@@ -134,6 +144,8 @@ Processing response:
   "status": "processing",
   "currentStage": "marsp_segmentation",
   "currentTask": "Running SegFormer inference inside the MARSP pipeline",
+  "mode": "single",
+  "model": "segformer",
   "windowSize": 5,
   "threshold": 0.5,
   "createdAt": "2026-05-13T10:55:00+00:00",
@@ -159,6 +171,8 @@ Completed response:
     "status": "completed",
     "createdAt": "2026-05-13T10:55:00+00:00",
     "updatedAt": "2026-05-13T10:58:00+00:00",
+    "mode": "single",
+    "model": "segformer",
     "windowSize": 5,
     "threshold": 0.5,
     "videoUrl": "http://127.0.0.1:8000/artifacts/outputs/frontend_uploads/RipVIS-051-1778669621.mp4",
@@ -174,13 +188,18 @@ Completed response:
 }
 ```
 
-The exact metric values depend on the uploaded video and model outputs.
+The exact metric values depend on the uploaded video and model outputs. The API may still provide `confidenceScore` for older clients, but it is derived from consecutive-mask similarity and must **not** be interpreted as calibrated prediction confidence; the current frontend does not display it for backend runs.
+
+In multi mode, processing status includes `models`, `modelCount`, `currentModel`, and `modelIndex` for all three runs. On completion, `result.mode` is `multi` and `result.modelResults` contains SegFormer, U-Net ResNet34, and ensemble entries, each with status, error if any, baseline/MARSP temporal metrics, `metricTable`, runtime, artifact URLs, and provenance. The ensemble provenance records both checkpoint identities and equal weights. `result.threeWayVideoUrl` points to the synchronized three-panel MARSP video when all three runs succeed. `result.inputProvenance` identifies the shared upload by path, size, and SHA-256. `summaryJsonUrl` and `summaryCsvUrl` link to the combined report. If a model fails while another succeeds, the response is completed with the failed model identified and the three-way video omitted; if all fail, the job reports an error.
+
+The cross-model `mean_consecutive_iou` and similar measures describe temporal consistency between adjacent predicted masks. They are not accuracy against labelled ground truth. For held-out ground-truth evaluation, use the separate evaluation workflow documented in `docs/held-out-model-evaluation.md`.
 
 ### `GET /artifacts/<path>`
 
 Serves generated files under `outputs/`.
 
 Video playback uses HTTP range requests, so the backend supports `206 Partial Content` responses for browser video controls.
+The comparison overlay and side-by-side writers prefer H.264 MP4 for browser playback. If OpenCV has no H.264 encoder, they fall back to `mp4v` and print a warning; in that environment, the generated MP4 may need transcoding before it can play in Chromium-based browsers. Intermediate mask videos are still written by the original pipeline.
 
 ## Generated Files
 
@@ -195,6 +214,8 @@ Comparison outputs are stored under:
 ```text
 outputs/comparisons/
 ```
+
+Multi-model runs are stored by upload and model under `outputs/multi_model/<run-name>/<model>/`. The run root also contains `multi_model_comparison_summary.json` and `.csv`.
 
 Typical comparison files:
 
@@ -225,6 +246,8 @@ Important frontend integration files:
 - `frontend/src/hooks/useDemoPredict.ts`: shared prediction/comparison state hook
 - `frontend/src/models/analysis.ts`: backend response and analysis history types
 - `frontend/src/pages/ResultsPage.tsx`: comparison video and metric table rendering
+- `frontend/src/components/MultiModelResults.tsx`: model tabs, comparison videos, temporal metrics, and partial-failure display
+- `frontend/src/components/ProvenanceDetails.tsx`: input/checkpoint identities and experiment artifact links
 - `frontend/src/context/AnalysisContext.tsx`: in-session analysis history storage
 
 Image uploads still use the mock prediction path. Video uploads use the real local baseline-vs-MARSP comparison backend.
@@ -235,6 +258,7 @@ Important backend and pipeline files:
 
 - `backend/server.py`: local HTTP API adapter
 - `scripts/run_baseline_vs_marsp_compare.py`: baseline-vs-MARSP comparison workflow
+- `scripts/run_multi_model_comparison.py`: matched per-model orchestration and combined JSON/CSV summary
 - `scripts/run_marsp_pipeline.py`: full MARSP processing pipeline
 - `scripts/run_video_segmentation.py`: frame-level SegFormer inference
 - `scripts/run_motion_compensation.py`: stabilisation preprocessing

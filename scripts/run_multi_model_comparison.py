@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import argparse
 import csv
 import json
@@ -10,9 +12,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 
+import cv2
+import numpy as np
+
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
-from scripts.run_baseline_vs_marsp_compare import file_identity
+from scripts.run_baseline_vs_marsp_compare import file_identity, open_comparison_video_writer
 from src.models.model_registry import get_segmentation_model_option
 
 
@@ -30,7 +35,7 @@ METRIC_KEYS = (
 @dataclass(frozen=True)
 class ModelRunSpec:
     model: str
-    checkpoint: Path
+    checkpoint: Path | None
 
 
 def parse_model_checkpoint(value: str) -> ModelRunSpec:
@@ -78,6 +83,7 @@ def build_model_command(
     window_size: int,
     threshold: float,
     reuse_existing: bool,
+    ensemble_specs: tuple[ModelRunSpec, ...] = (),
 ) -> list[str]:
     command = [
         sys.executable,
@@ -88,8 +94,6 @@ def build_model_command(
         str(input_video),
         "--model",
         spec.model,
-        "--checkpoint",
-        str(spec.checkpoint),
         "--window-size",
         str(window_size),
         "--threshold",
@@ -97,6 +101,11 @@ def build_model_command(
         "--output-root",
         str(model_output_root),
     ]
+    if spec.model == "ensemble":
+        for component in ensemble_specs:
+            command.extend(["--ensemble-checkpoint", f"{component.model}={component.checkpoint}"])
+    else:
+        command.extend(["--checkpoint", str(spec.checkpoint)])
     if reuse_existing:
         command.append("--reuse-existing")
     return command
@@ -113,7 +122,7 @@ def failed_result(
         "model": spec.model,
         "status": "failed",
         "error": error,
-        "checkpoint": str(spec.checkpoint),
+        "checkpoint": str(spec.checkpoint) if spec.checkpoint else None,
         "model_output_root": str(model_output_root),
         "runner_runtime_seconds": runtime_seconds,
     }
@@ -128,17 +137,20 @@ def run_model(
     window_size: int,
     threshold: float,
     reuse_existing: bool,
+    ensemble_specs: tuple[ModelRunSpec, ...] = (),
 ) -> dict:
     model_output_root = run_root / spec.model
     model_output_root.mkdir(parents=True, exist_ok=True)
     started_at = time.perf_counter()
 
-    if not spec.checkpoint.is_file():
+    checkpoints = ensemble_specs if spec.model == "ensemble" else (spec,)
+    missing = next((item for item in checkpoints if item.checkpoint is None or not item.checkpoint.is_file()), None)
+    if missing is not None or not checkpoints:
         return failed_result(
             spec=spec,
             model_output_root=model_output_root,
             runtime_seconds=time.perf_counter() - started_at,
-            error=f"Checkpoint not found: {spec.checkpoint}",
+            error=f"Checkpoint not found: {missing.checkpoint if missing else 'ensemble components'}",
         )
 
     command = build_model_command(
@@ -149,6 +161,7 @@ def run_model(
         window_size=window_size,
         threshold=threshold,
         reuse_existing=reuse_existing,
+        ensemble_specs=ensemble_specs,
     )
     print(f"\n[MODEL] {spec.model}", flush=True)
     print("[RUN]", " ".join(command), flush=True)
@@ -187,7 +200,7 @@ def run_model(
         )
 
     checkpoint_identity = metrics.get("provenance", {}).get("checkpoint")
-    if checkpoint_identity is None:
+    if checkpoint_identity is None and spec.checkpoint:
         checkpoint_identity = file_identity(str(spec.checkpoint))
 
     return {
@@ -195,13 +208,16 @@ def run_model(
         "status": "success",
         "error": None,
         "checkpoint": checkpoint_identity,
+        "component_checkpoints": metrics.get("provenance", {}).get("component_checkpoints"),
         "model_output_root": str(model_output_root),
         "runner_runtime_seconds": runtime_seconds,
         "frame_count": metrics.get("baseline", {}).get("total_frames"),
         "workflow_timing_seconds": metrics.get("timing_seconds", {}),
+        "provenance": metrics.get("provenance", {}),
         "baseline": metrics.get("baseline", {}),
         "marsp": metrics.get("marsp", {}),
         "comparison": metrics.get("comparison", {}),
+        "metric_table": metrics.get("metric_table", []),
         "artifacts": metrics.get("artifacts", {}),
         "metrics_path": str(metrics_path),
     }
@@ -268,6 +284,60 @@ def print_result_table(results: list[dict]) -> None:
             print(f"  error: {result['error']}")
 
 
+def save_three_way_video(results: list[dict], output_path: Path) -> None:
+    expected = ("segformer", "unet-resnet34", "ensemble")
+    paths = [
+        next(result for result in results if result["model"] == name)["artifacts"]["marsp_overlay"]
+        for name in expected
+    ]
+    captures = [cv2.VideoCapture(path) for path in paths]
+    writer = None
+    try:
+        if not all(capture.isOpened() for capture in captures):
+            raise ValueError("Could not open every MARSP overlay for the three-way video")
+        sizes = [(
+            int(capture.get(cv2.CAP_PROP_FRAME_WIDTH)),
+            int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT)),
+        ) for capture in captures]
+        if len(set(sizes)) != 1 or min(sizes[0]) <= 0:
+            raise ValueError("Three-way videos must have matching frame sizes")
+        rates = [capture.get(cv2.CAP_PROP_FPS) for capture in captures]
+        if max(rates) - min(rates) > 0.01:
+            raise ValueError("Three-way videos must have matching frame rates")
+        width, height = sizes[0]
+        panel_width = min(width, 640)
+        panel_width -= panel_width % 2
+        panel_height = max(2, round(height * panel_width / width))
+        panel_height -= panel_height % 2
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        writer = open_comparison_video_writer(
+            str(output_path), rates[0] or 30.0, (panel_width * 3, panel_height)
+        )
+        labels = ("SegFormer", "U-Net ResNet34", "Equal-weight ensemble")
+        count = 0
+        while True:
+            reads = [capture.read() for capture in captures]
+            if not any(ok for ok, _ in reads):
+                break
+            if not all(ok for ok, _ in reads):
+                raise ValueError("Three-way videos have different frame counts")
+            panels = []
+            for (_, frame), label in zip(reads, labels):
+                panel = cv2.resize(frame, (panel_width, panel_height))
+                cv2.rectangle(panel, (0, 0), (panel_width, 42), (0, 0, 0), -1)
+                cv2.putText(panel, label, (12, 29), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+                panels.append(panel)
+            writer.write(np.hstack(panels))
+            count += 1
+        if count < 2:
+            raise ValueError("Three-way comparison needs at least two frames")
+    finally:
+        for capture in captures:
+            capture.release()
+        if writer is not None:
+            writer.release()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--run-name", required=True, type=validate_run_name)
@@ -289,6 +359,7 @@ def main() -> int:
         help="Root directory for all multi-model runs",
     )
     parser.add_argument("--reuse-existing", action="store_true")
+    parser.add_argument("--include-ensemble", action="store_true", help="Run equal-weight probability fusion as a third comparison")
     args = parser.parse_args()
 
     if args.window_size <= 0:
@@ -300,6 +371,8 @@ def main() -> int:
         validate_unique_models(args.model_checkpoint)
     except ValueError as exc:
         parser.error(str(exc))
+    if args.include_ensemble and len(args.model_checkpoint) != 2:
+        parser.error("--include-ensemble requires both registered component models")
 
     input_video = Path(args.input).expanduser().resolve()
     if not input_video.is_file():
@@ -319,6 +392,25 @@ def main() -> int:
         )
         for spec in args.model_checkpoint
     ]
+    if args.include_ensemble:
+        results.append(run_model(
+            spec=ModelRunSpec("ensemble", None),
+            video_name=args.video_name,
+            input_video=input_video,
+            run_root=run_root,
+            window_size=args.window_size,
+            threshold=args.threshold,
+            reuse_existing=args.reuse_existing,
+            ensemble_specs=tuple(args.model_checkpoint),
+        ))
+
+    three_way_video = None
+    if all(any(result["model"] == model and result["status"] == "success" for result in results)
+           for model in ("segformer", "unet-resnet34", "ensemble")):
+        print("[STAGE] Rendering three-way comparison video", flush=True)
+        path = run_root / "three_way_marsp.mp4"
+        save_three_way_video(results, path)
+        three_way_video = str(path)
 
     summary = {
         "schema_version": 1,
@@ -330,7 +422,9 @@ def main() -> int:
             "window_size": args.window_size,
             "threshold": args.threshold,
         },
-        "models_requested": [spec.model for spec in args.model_checkpoint],
+        "models_requested": [spec.model for spec in args.model_checkpoint] + (["ensemble"] if args.include_ensemble else []),
+        "ensemble": {"method": "weighted_probability_mean", "weights": {spec.model: 0.5 for spec in args.model_checkpoint}} if args.include_ensemble else None,
+        "artifacts": {"three_way_video": three_way_video} if three_way_video else {},
         "successful_models": [
             result["model"] for result in results if result["status"] == "success"
         ],

@@ -39,15 +39,12 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--video-name", required=True, help="Logical name for this run, e.g. RipVIS-051")
     parser.add_argument("--input", required=True, help="Path to input video")
-    parser.add_argument(
-        "--checkpoint",
-        default="checkpoints/best_model.pt",
-        help="Path to trained segmentation model checkpoint",
-    )
+    parser.add_argument("--checkpoint", help="Path to trained segmentation model checkpoint")
+    parser.add_argument("--ensemble-checkpoint", action="append", default=[], metavar="MODEL=CHECKPOINT")
     parser.add_argument(
         "--model",
         default="segformer",
-        choices=SUPPORTED_SEGMENTATION_MODELS,
+        choices=(*SUPPORTED_SEGMENTATION_MODELS, "ensemble"),
         help="Segmentation model adapter to use",
     )
     parser.add_argument("--window-size", type=int, default=5)
@@ -58,9 +55,21 @@ def main():
     )
     args = parser.parse_args()
 
+    if args.model == "ensemble":
+        if args.checkpoint or len(args.ensemble_checkpoint) < 2:
+            parser.error("ensemble requires --ensemble-checkpoint for each component")
+    elif args.ensemble_checkpoint:
+        parser.error("--ensemble-checkpoint is only valid with --model ensemble")
+
     video_name = args.video_name
     input_video = args.input
-    checkpoint = args.checkpoint
+    checkpoint = args.checkpoint or "checkpoints/best_model.pt"
+    inference_model_args = ["--model", args.model]
+    if args.model == "ensemble":
+        for spec in args.ensemble_checkpoint:
+            inference_model_args.extend(["--ensemble-checkpoint", spec])
+    else:
+        inference_model_args.extend(["--checkpoint", checkpoint])
 
     output_directories = resolve_output_directories(args.output_root)
     motion_dir = output_directories["motion"]
@@ -115,8 +124,7 @@ def main():
         sys.executable,
         "scripts/run_video_segmentation.py",
         "--input", input_video,
-        "--model", args.model,
-        "--checkpoint", checkpoint,
+        *inference_model_args,
         "--output-overlay", orig_overlay,
         "--output-mask", orig_mask,
         "--output-prob", orig_prob,
@@ -128,8 +136,7 @@ def main():
         sys.executable,
         "scripts/run_video_segmentation.py",
         "--input", stabilised_video,
-        "--model", args.model,
-        "--checkpoint", checkpoint,
+        *inference_model_args,
         "--output-overlay", stab_overlay,
         "--output-mask", stab_mask,
         "--output-prob", stab_prob,
@@ -168,7 +175,8 @@ def main():
         "video_name": video_name,
         "input_video": input_video,
         "segmentation_model": args.model,
-        "checkpoint": checkpoint,
+        "checkpoint": checkpoint if args.model != "ensemble" else None,
+        "ensemble_checkpoints": args.ensemble_checkpoint if args.model == "ensemble" else None,
         "window_size": args.window_size,
         "threshold": args.threshold,
         "motion_adaptive_temporal_aggregation": True,

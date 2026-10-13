@@ -1,11 +1,13 @@
 import type { UploadFile } from '../models/upload';
-import type { CaseResponse, PipelineStage } from '../models/analysis';
+import type { CaseResponse, ComparisonMode, PipelineStage } from '../models/analysis';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000';
 const POLL_INTERVAL_MS = 1000;
 
 export interface ComparisonRunOptions {
+  mode: ComparisonMode;
   model: string;
+  models?: string[];
   windowSize: number;
   threshold: number;
 }
@@ -36,6 +38,11 @@ export interface ComparisonJobStatus {
   createdAt?: string;
   updatedAt?: string;
   model?: string;
+  mode?: ComparisonMode;
+  models?: string[];
+  currentModel?: string;
+  modelIndex?: number;
+  modelCount?: number;
   windowSize?: number;
   threshold?: number;
   error?: string;
@@ -62,6 +69,10 @@ export async function runBaselineMarspComparison(
   const form = new FormData();
   form.append('file', uploadFile.file);
   form.append('model', options.model);
+  form.append('mode', options.mode);
+  if (options.mode === 'multi') {
+    options.models?.forEach(model => form.append('models', model));
+  }
   form.append('windowSize', String(options.windowSize));
   form.append('threshold', String(options.threshold));
 

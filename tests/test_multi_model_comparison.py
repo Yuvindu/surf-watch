@@ -5,12 +5,16 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import cv2
+import numpy as np
+
 from scripts.run_marsp_pipeline import resolve_output_directories
 from scripts.run_multi_model_comparison import (
     ModelRunSpec,
     build_model_command,
     parse_model_checkpoint,
     run_model,
+    save_three_way_video,
     validate_run_name,
     validate_unique_models,
     write_summary_artifacts,
@@ -84,6 +88,47 @@ class MultiModelComparisonTests(unittest.TestCase):
             "unet-resnet34",
         )
         self.assertIn("--reuse-existing", command)
+
+    def test_ensemble_command_passes_both_component_checkpoints(self) -> None:
+        components = (
+            ModelRunSpec("segformer", Path("/tmp/segformer.pt")),
+            ModelRunSpec("unet-resnet34", Path("/tmp/unet.pt")),
+        )
+        command = build_model_command(
+            spec=ModelRunSpec("ensemble", None),
+            video_name="case",
+            input_video=Path("/tmp/input.mp4"),
+            model_output_root=Path("/tmp/run/ensemble"),
+            window_size=7,
+            threshold=0.6,
+            reuse_existing=False,
+            ensemble_specs=components,
+        )
+        self.assertNotIn("--checkpoint", command)
+        self.assertEqual(command.count("--ensemble-checkpoint"), 2)
+        self.assertIn("segformer=/tmp/segformer.pt", command)
+        self.assertIn("unet-resnet34=/tmp/unet.pt", command)
+
+    def test_three_way_video_has_synchronized_labeled_panels(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            results = []
+            for name, color in (("segformer", (0, 0, 200)), ("unet-resnet34", (0, 200, 0)), ("ensemble", (200, 0, 0))):
+                path = root / f"{name}.mp4"
+                writer = cv2.VideoWriter(str(path), cv2.VideoWriter_fourcc(*"mp4v"), 5, (64, 48))
+                self.assertTrue(writer.isOpened())
+                for _ in range(3):
+                    writer.write(np.full((48, 64, 3), color, dtype=np.uint8))
+                writer.release()
+                results.append({"model": name, "artifacts": {"marsp_overlay": str(path)}})
+            output = root / "three-way.mp4"
+            save_three_way_video(results, output)
+            capture = cv2.VideoCapture(str(output))
+            self.assertTrue(capture.isOpened())
+            self.assertEqual(int(capture.get(cv2.CAP_PROP_FRAME_COUNT)), 3)
+            self.assertEqual(int(capture.get(cv2.CAP_PROP_FRAME_WIDTH)), 192)
+            self.assertEqual(int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT)), 48)
+            capture.release()
 
     @patch(
         "scripts.run_multi_model_comparison.subprocess.run",

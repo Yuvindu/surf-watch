@@ -16,14 +16,15 @@ interface ResultCardProps {
 
 export default function ResultCard({ analysisCase }: ResultCardProps) {
   const navigate = useNavigate();
-  // Prefer backend's flat confidenceScore; fall back to nested mock value
-  const conf = analysisCase.confidenceScore ?? analysisCase.prediction?.averageConfidence ?? 0;
+  const conf = analysisCase.prediction?.averageConfidence;
   const displayName = analysisCase.caseName ?? analysisCase.upload.file.name;
-  const hasResult = analysisCase.confidenceScore != null || analysisCase.prediction != null;
+  const resultLabel = analysisCase.mode === 'multi'
+    ? `${analysisCase.models?.length ?? 0} models`
+    : analysisCase.model ?? (conf !== undefined ? `${Math.round(conf * 100)}% · ${confidenceLabel(conf)}` : null);
 
   return (
     <Card>
-      <CardActionArea onClick={() => navigate(`/results/${analysisCase.id}`)}>
+      <CardActionArea onClick={() => navigate(analysisCase.status === 'processing' ? '/analyse' : `/results/${analysisCase.id}`)}>
         {/* Thumbnail — prefer overlay preview from backend, fall back to local upload */}
         <Box sx={{ height: 140, bgcolor: 'action.hover', position: 'relative', overflow: 'hidden' }}>
           {(analysisCase.overlayUrl ?? analysisCase.upload.previewUrl) ? (
@@ -75,9 +76,9 @@ export default function ResultCard({ analysisCase }: ResultCardProps) {
               variant="outlined"
               sx={{ fontSize: '0.65rem', height: 20 }}
             />
-            {hasResult && (
+            {analysisCase.status === 'complete' && resultLabel && (
               <Chip
-                label={`${Math.round(conf * 100)}% · ${confidenceLabel(conf)}`}
+                label={resultLabel}
                 size="small"
                 sx={{
                   fontSize: '0.65rem',

@@ -14,6 +14,40 @@ export type PipelineStage =
 
 // 'completed' matches backend; 'complete' is the frontend-internal equivalent
 export type AnalysisStatus = 'idle' | 'processing' | 'complete' | 'completed' | 'error';
+export type ComparisonMode = 'single' | 'multi';
+
+export interface ArtifactIdentity {
+  path: string;
+  size_bytes: number;
+  sha256: string;
+}
+
+export interface ComparisonProvenance {
+  generated_at_utc?: string;
+  git_revision?: string | null;
+  segmentation_model?: string;
+  checkpoint?: ArtifactIdentity;
+  component_checkpoints?: Record<string, ArtifactIdentity>;
+  ensemble_weights?: Record<string, number>;
+  input?: ArtifactIdentity;
+  parameters?: { window_size?: number; threshold?: number };
+}
+
+export interface ModelComparisonResult {
+  model: string;
+  status: 'success' | 'failed';
+  error?: string | null;
+  frameCount?: number;
+  runnerRuntimeSeconds?: number;
+  timingSeconds?: Record<string, number>;
+  baseline?: Record<string, number>;
+  marsp?: Record<string, number>;
+  comparison?: Record<string, number>;
+  metricTable?: ComparisonMetric[];
+  provenance?: ComparisonProvenance;
+  artifacts?: Record<string, string>;
+  metricsUrl?: string;
+}
 
 export interface AnalysisCase {
   id: string;                      // maps to backend caseId
@@ -32,6 +66,20 @@ export interface AnalysisCase {
   confidenceScore?: number;        // backend: confidenceScore (flat, 0–1)
   summaryLabel?: string;           // backend: summaryLabel e.g. "Rip current detected"
   model?: string;                  // backend: selected segmentation adapter id
+  mode?: ComparisonMode;
+  models?: string[];
+  currentModel?: string;
+  modelIndex?: number;
+  modelCount?: number;
+  modelResults?: ModelComparisonResult[];
+  threeWayVideoUrl?: string;
+  ensemble?: { method: string; weights: Record<string, number> };
+  inputProvenance?: ArtifactIdentity;
+  totalRuntimeSeconds?: number;
+  summaryJsonUrl?: string;
+  summaryCsvUrl?: string;
+  provenance?: ComparisonProvenance;
+  timingSeconds?: Record<string, number>;
   windowSize?: number;             // backend: temporal aggregation window
   threshold?: number;              // backend: mask threshold
   comparisonVideoUrl?: string;     // backend: baseline-vs-MARSP side-by-side video
@@ -61,10 +109,21 @@ export interface CaseResponse {
   createdAt: string;
   updatedAt: string;
   videoUrl: string;
-  overlayUrl: string;
-  predictionMaskUrl: string;
-  confidenceScore: number;
+  overlayUrl?: string;
+  predictionMaskUrl?: string;
+  confidenceScore?: number;
   summaryLabel: string;
+  mode?: ComparisonMode;
+  models?: string[];
+  modelResults?: ModelComparisonResult[];
+  threeWayVideoUrl?: string;
+  ensemble?: { method: string; weights: Record<string, number> };
+  inputProvenance?: ArtifactIdentity;
+  totalRuntimeSeconds?: number;
+  summaryJsonUrl?: string;
+  summaryCsvUrl?: string;
+  provenance?: ComparisonProvenance;
+  timingSeconds?: Record<string, number>;
   model?: string;
   windowSize?: number;
   threshold?: number;
@@ -101,6 +160,17 @@ export function normalizeCaseResponse(
     predictionMaskUrl: response.predictionMaskUrl,
     confidenceScore: response.confidenceScore,
     summaryLabel: response.summaryLabel,
+    mode: response.mode,
+    models: response.models,
+    modelResults: response.modelResults,
+    threeWayVideoUrl: response.threeWayVideoUrl,
+    ensemble: response.ensemble,
+    inputProvenance: response.inputProvenance,
+    totalRuntimeSeconds: response.totalRuntimeSeconds,
+    summaryJsonUrl: response.summaryJsonUrl,
+    summaryCsvUrl: response.summaryCsvUrl,
+    provenance: response.provenance,
+    timingSeconds: response.timingSeconds,
     model: response.model,
     windowSize: response.windowSize,
     threshold: response.threshold,

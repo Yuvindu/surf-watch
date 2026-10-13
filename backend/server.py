@@ -27,6 +27,7 @@ from src.models.model_registry import (
 ROOT = Path(__file__).resolve().parents[1]
 UPLOAD_DIR = ROOT / "outputs" / "frontend_uploads"
 COMPARISON_DIR = ROOT / "outputs" / "comparisons"
+MULTI_MODEL_DIR = ROOT / "outputs" / "multi_model"
 MAX_UPLOAD_BYTES = 1024**3
 VENV_PYTHON = ROOT / ".venv" / "bin" / "python"
 JOBS: dict[str, dict[str, Any]] = {}
@@ -123,6 +124,8 @@ def task_from_line(line: str, marsp_started: bool) -> tuple[str, str, bool] | No
         return ("comparison_rendering", "Rendering the side-by-side baseline vs MARSP comparison video", marsp_started)
     if "[STAGE] Computing baseline vs MARSP temporal stability metrics" in line:
         return ("comparison_rendering", "Computing baseline vs MARSP temporal stability metrics", marsp_started)
+    if "[STAGE] Rendering three-way comparison video" in line:
+        return ("comparison_rendering", "Rendering synchronized three-way MARSP video", marsp_started)
     return None
 
 
@@ -184,6 +187,24 @@ def parse_model_field(form: cgi.FieldStorage) -> str:
     return get_segmentation_model_option(model_name).id
 
 
+def parse_comparison_mode(form: cgi.FieldStorage) -> str:
+    mode = str(form.getfirst("mode") or "single")
+    if mode not in ("single", "multi"):
+        raise ValueError("mode must be 'single' or 'multi'.")
+    return mode
+
+
+def parse_models_field(form: cgi.FieldStorage) -> list[str]:
+    raw_models = form.getlist("models")
+    models = [get_segmentation_model_option(str(value)).id for value in raw_models]
+    if len(models) < 2 or len(models) != len(set(models)):
+        raise ValueError("Select at least two different segmentation models.")
+    unavailable = [model for model in models if not default_checkpoint_for_model(model).is_file()]
+    if unavailable:
+        raise ValueError("Checkpoint required for: " + ", ".join(unavailable))
+    return models
+
+
 def default_checkpoint_for_model(model_name: str) -> Path:
     option = get_segmentation_model_option(model_name)
     return ROOT / option.default_checkpoint
@@ -225,6 +246,29 @@ def build_comparison_command(
         "--threshold",
         str(threshold),
     ]
+
+
+def build_multi_model_command(
+    video_name: str,
+    input_path: Path,
+    models: list[str],
+    window_size: int,
+    threshold: float,
+) -> list[str]:
+    command = [
+        pipeline_python(),
+        "scripts/run_multi_model_comparison.py",
+        "--run-name", video_name,
+        "--video-name", video_name,
+        "--input", str(input_path),
+        "--output-root", str(MULTI_MODEL_DIR),
+        "--window-size", str(window_size),
+        "--threshold", str(threshold),
+    ]
+    for model in models:
+        command.extend(["--model-checkpoint", f"{model}={default_checkpoint_for_model(model)}"])
+    command.append("--include-ensemble")
+    return command
 
 
 def run_comparison(
@@ -283,6 +327,143 @@ def run_comparison(
     return read_json(metrics_path)
 
 
+def run_multi_model_comparison(
+    video_name: str,
+    input_path: Path,
+    models: list[str],
+    window_size: int,
+    threshold: float,
+    job_id: str,
+) -> dict[str, Any]:
+    command = build_multi_model_command(video_name, input_path, models, window_size, threshold)
+    env = os.environ.copy()
+    env["PYTHONUNBUFFERED"] = "1"
+    process = subprocess.Popen(
+        command,
+        cwd=ROOT,
+        env=env,
+        stderr=subprocess.STDOUT,
+        stdout=subprocess.PIPE,
+        text=True,
+        bufsize=1,
+    )
+
+    output_lines: list[str] = []
+    current_model: str | None = None
+    requested_models = [*models, "ensemble"]
+    marsp_started = False
+    if process.stdout is not None:
+        for line in process.stdout:
+            output_lines.append(line)
+            if "[STAGE] Rendering three-way comparison video" in line:
+                current_model = None
+                set_job_status(job_id, currentModel=None, modelIndex=None)
+            if line.startswith("[MODEL] "):
+                current_model = line.removeprefix("[MODEL] ").strip()
+                marsp_started = False
+                set_job_status(
+                    job_id,
+                    currentModel=current_model,
+                    modelIndex=requested_models.index(current_model) + 1 if current_model in requested_models else None,
+                    currentStage="baseline_segmentation",
+                    currentTask=f"Running {current_model} baseline and MARSP comparison",
+                )
+                continue
+            task = task_from_line(line, marsp_started)
+            if task is not None:
+                stage, current_task, marsp_started = task
+                set_job_status(
+                    job_id,
+                    currentStage=stage,
+                    currentTask=f"{current_model}: {current_task}" if current_model else current_task,
+                )
+
+    return_code = process.wait()
+    summary_path = MULTI_MODEL_DIR / video_name / "multi_model_comparison_summary.json"
+    if not summary_path.is_file():
+        raise RuntimeError(friendly_pipeline_error("".join(output_lines), ""))
+    summary = read_json(summary_path)
+    if not summary.get("successful_models"):
+        errors = "; ".join(
+            f"{result['model']}: {result.get('error', 'failed')}"
+            for result in summary.get("results", [])
+        )
+        raise RuntimeError(errors or f"Multi-model comparison exited with code {return_code}.")
+    return summary
+
+
+def artifact_urls(base_url: str, artifacts: dict[str, str]) -> dict[str, str]:
+    return {
+        key: public_artifact_url_from_base(base_url, ROOT / path)
+        for key, path in artifacts.items()
+    }
+
+
+def build_multi_case_response(
+    base_url: str,
+    video_name: str,
+    case_name: str,
+    input_path: Path,
+    uploaded_at: str,
+    models: list[str],
+    window_size: int,
+    threshold: float,
+    summary: dict[str, Any],
+) -> dict[str, Any]:
+    model_results = []
+    for result in summary["results"]:
+        model_result = {
+            "model": result["model"],
+            "status": result["status"],
+            "error": result.get("error"),
+            "frameCount": result.get("frame_count"),
+            "runnerRuntimeSeconds": result.get("runner_runtime_seconds"),
+            "timingSeconds": result.get("workflow_timing_seconds", {}),
+            "baseline": result.get("baseline", {}),
+            "marsp": result.get("marsp", {}),
+            "comparison": result.get("comparison", {}),
+            "metricTable": result.get("metric_table", []),
+            "provenance": result.get("provenance", {}),
+            "artifacts": artifact_urls(base_url, result.get("artifacts", {})),
+        }
+        if result.get("metrics_path"):
+            model_result["metricsUrl"] = public_artifact_url_from_base(
+                base_url, Path(result["metrics_path"])
+            )
+        model_results.append(model_result)
+
+    first_success = next(result for result in model_results if result["status"] == "success")
+    summary_root = MULTI_MODEL_DIR / video_name
+    return {
+        "caseId": video_name,
+        "caseName": case_name,
+        "status": "completed",
+        "createdAt": uploaded_at,
+        "updatedAt": utc_now(),
+        "mode": "multi",
+        "models": summary.get("models_requested", models),
+        "windowSize": window_size,
+        "threshold": threshold,
+        "videoUrl": public_artifact_url_from_base(base_url, input_path),
+        "overlayUrl": first_success["artifacts"].get("side_by_side_video"),
+        "summaryLabel": "Model comparison complete",
+        "modelResults": model_results,
+        "threeWayVideoUrl": (
+            public_artifact_url_from_base(base_url, Path(summary["artifacts"]["three_way_video"]))
+            if summary.get("artifacts", {}).get("three_way_video") else None
+        ),
+        "ensemble": summary.get("ensemble"),
+        "inputProvenance": summary.get("input"),
+        "totalRuntimeSeconds": summary.get("total_runtime_seconds"),
+        "summaryJsonUrl": public_artifact_url_from_base(
+            base_url, summary_root / "multi_model_comparison_summary.json"
+        ),
+        "summaryCsvUrl": public_artifact_url_from_base(
+            base_url, summary_root / "multi_model_comparison_summary.csv"
+        ),
+    }
+
+
 def build_case_response(
     base_url: str,
     video_name: str,
@@ -308,6 +489,7 @@ def build_case_response(
         "status": "completed",
         "createdAt": uploaded_at,
         "updatedAt": utc_now(),
+        "mode": "single",
         "model": model_name,
         "windowSize": window_size,
         "threshold": threshold,
@@ -322,6 +504,8 @@ def build_case_response(
         "confidenceScore": confidence_score(metrics),
         "summaryLabel": summary_label(metrics),
         "metricTable": metrics.get("metric_table", []),
+        "provenance": metrics.get("provenance", {}),
+        "timingSeconds": metrics.get("timing_seconds", {}),
         "comparison": metrics.get("comparison", {}),
         "baseline": metrics.get("baseline", {}),
         "marsp": metrics.get("marsp", {}),
@@ -339,6 +523,8 @@ def process_comparison_job(
     threshold: float,
     uploaded_at: str,
     base_url: str,
+    mode: str = "single",
+    models: list[str] | None = None,
 ) -> None:
     try:
         set_job_status(
@@ -347,26 +533,36 @@ def process_comparison_job(
             currentStage="baseline_segmentation",
             currentTask="Queued baseline segmentation",
         )
-        metrics = run_comparison(
-            video_name,
-            input_path,
-            checkpoint,
-            model_name,
-            window_size,
-            threshold,
-            job_id=job_id,
-        )
-        response = build_case_response(
-            base_url,
-            video_name,
-            case_name,
-            input_path,
-            uploaded_at,
-            model_name,
-            window_size,
-            threshold,
-            metrics,
-        )
+        if mode == "multi":
+            selected_models = models or []
+            summary = run_multi_model_comparison(
+                video_name, input_path, selected_models, window_size, threshold, job_id
+            )
+            response = build_multi_case_response(
+                base_url, video_name, case_name, input_path, uploaded_at,
+                selected_models, window_size, threshold, summary,
+            )
+        else:
+            metrics = run_comparison(
+                video_name,
+                input_path,
+                checkpoint,
+                model_name,
+                window_size,
+                threshold,
+                job_id=job_id,
+            )
+            response = build_case_response(
+                base_url,
+                video_name,
+                case_name,
+                input_path,
+                uploaded_at,
+                model_name,
+                window_size,
+                threshold,
+                metrics,
+            )
         set_job_status(
             job_id,
             status="completed",
@@ -465,7 +661,9 @@ class SurfWatchHandler(BaseHTTPRequestHandler):
 
         params = parse_qs(query)
         try:
-            model_name = parse_model_field(form)
+            mode = parse_comparison_mode(form)
+            model_name = parse_model_field(form) if mode == "single" else DEFAULT_SEGMENTATION_MODEL
+            models = parse_models_field(form) if mode == "multi" else [model_name]
             window_size = parse_int_field(form, "windowSize", default=5, minimum=1, maximum=31)
             threshold = parse_float_field(form, "threshold", default=0.5, minimum=0.0, maximum=1.0)
         except ValueError as exc:
@@ -485,7 +683,7 @@ class SurfWatchHandler(BaseHTTPRequestHandler):
         COMPARISON_DIR.mkdir(parents=True, exist_ok=True)
 
         uploaded_at = utc_now()
-        video_name = f"{slugify_filename(field.filename)}-{int(time.time())}"
+        video_name = f"{slugify_filename(field.filename)}-{time.time_ns()}"
         extension = Path(field.filename).suffix or ".mp4"
         input_path = UPLOAD_DIR / f"{video_name}{extension}"
 
@@ -504,7 +702,10 @@ class SurfWatchHandler(BaseHTTPRequestHandler):
                 "status": "processing",
                 "currentStage": "frame_extraction",
                 "currentTask": "Saving uploaded video for processing",
+                "mode": mode,
                 "model": model_name,
+                "models": [*models, "ensemble"] if mode == "multi" else models,
+                "modelCount": len(models) + (1 if mode == "multi" else 0),
                 "windowSize": window_size,
                 "threshold": threshold,
                 "createdAt": uploaded_at,
@@ -524,6 +725,8 @@ class SurfWatchHandler(BaseHTTPRequestHandler):
                 threshold,
                 uploaded_at,
                 base_url,
+                mode,
+                models,
             ),
             daemon=True,
         )
@@ -537,7 +740,10 @@ class SurfWatchHandler(BaseHTTPRequestHandler):
                 "status": "processing",
                 "currentStage": "frame_extraction",
                 "currentTask": "Saving uploaded video for processing",
+                "mode": mode,
                 "model": model_name,
+                "models": [*models, "ensemble"] if mode == "multi" else models,
+                "modelCount": len(models) + (1 if mode == "multi" else 0),
                 "windowSize": window_size,
                 "threshold": threshold,
                 "createdAt": uploaded_at,

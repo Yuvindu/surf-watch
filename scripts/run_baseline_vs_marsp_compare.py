@@ -1,4 +1,6 @@
 # scripts/run_baseline_vs_marsp_compare.py
+from __future__ import annotations
+
 import argparse
 import hashlib
 import json
@@ -61,18 +63,28 @@ def build_provenance(
     input_video: str,
     window_size: int,
     threshold: float,
+    ensemble_checkpoints: dict[str, str] | None = None,
 ) -> dict:
-    return {
+    provenance = {
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "git_revision": git_revision(),
         "segmentation_model": model,
-        "checkpoint": file_identity(checkpoint),
         "input": file_identity(input_video),
         "parameters": {
             "window_size": window_size,
             "threshold": threshold,
         },
     }
+    if ensemble_checkpoints:
+        provenance["component_checkpoints"] = {
+            name: file_identity(path) for name, path in ensemble_checkpoints.items()
+        }
+        provenance["ensemble_weights"] = {
+            name: 1.0 / len(ensemble_checkpoints) for name in ensemble_checkpoints
+        }
+    else:
+        provenance["checkpoint"] = file_identity(checkpoint)
+    return provenance
 
 
 def reusable_run_matches(metrics_path: Path, provenance: dict) -> bool:
@@ -85,8 +97,12 @@ def reusable_run_matches(metrics_path: Path, provenance: dict) -> bool:
         return (
             existing_provenance["segmentation_model"]
             == provenance["segmentation_model"]
-            and existing_provenance["checkpoint"]["sha256"]
-            == provenance["checkpoint"]["sha256"]
+            and existing_provenance.get("checkpoint", {}).get("sha256")
+            == provenance.get("checkpoint", {}).get("sha256")
+            and existing_provenance.get("component_checkpoints")
+            == provenance.get("component_checkpoints")
+            and existing_provenance.get("ensemble_weights")
+            == provenance.get("ensemble_weights")
             and existing_provenance["input"]["sha256"]
             == provenance["input"]["sha256"]
             and existing_provenance["parameters"] == provenance["parameters"]
@@ -137,6 +153,17 @@ def load_mask_video(path: str) -> tuple[list[np.ndarray], float]:
     return masks, fps
 
 
+def open_comparison_video_writer(output_path: str, fps: float, size: tuple[int, int]) -> cv2.VideoWriter:
+    for codec in ("avc1", "mp4v"):
+        writer = cv2.VideoWriter(output_path, cv2.VideoWriter_fourcc(*codec), fps, size)
+        if writer.isOpened():
+            if codec == "mp4v":
+                print("[WARN] H.264 encoder unavailable; generated MP4 may not play in all browsers", flush=True)
+            return writer
+        writer.release()
+    raise RuntimeError(f"Could not create comparison video: {output_path}")
+
+
 def save_overlay_video(
     original_video: str,
     mask_video: str,
@@ -156,12 +183,7 @@ def save_overlay_video(
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
 
     height, width = frames[0].shape[:2]
-    writer = cv2.VideoWriter(
-        output_path,
-        cv2.VideoWriter_fourcc(*"mp4v"),
-        fps,
-        (width, height),
-    )
+    writer = open_comparison_video_writer(output_path, fps, (width, height))
 
     for frame, mask in zip(frames, masks):
         overlay = frame.copy()
@@ -217,12 +239,7 @@ def save_side_by_side_video(
     fps = fps_left or fps_right
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
 
-    writer = cv2.VideoWriter(
-        output_path,
-        cv2.VideoWriter_fourcc(*"mp4v"),
-        fps,
-        (w1 * 2, h1),
-    )
+    writer = open_comparison_video_writer(output_path, fps, (w1 * 2, h1))
 
     for left, right in zip(left_frames, right_frames):
         left = left.copy()
@@ -377,11 +394,12 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--video-name", required=True)
     parser.add_argument("--input", required=True, help="Path to original input video")
-    parser.add_argument("--checkpoint", default="checkpoints/best_model.pt")
+    parser.add_argument("--checkpoint")
+    parser.add_argument("--ensemble-checkpoint", action="append", default=[], metavar="MODEL=CHECKPOINT")
     parser.add_argument(
         "--model",
         default="segformer",
-        choices=SUPPORTED_SEGMENTATION_MODELS,
+        choices=(*SUPPORTED_SEGMENTATION_MODELS, "ensemble"),
         help="Segmentation model adapter to use",
     )
     parser.add_argument("--window-size", type=int, default=5)
@@ -397,17 +415,39 @@ def main() -> None:
         parser.error("--window-size must be greater than zero")
     if not 0.0 <= args.threshold <= 1.0:
         parser.error("--threshold must be between 0.0 and 1.0")
+    if args.model == "ensemble":
+        if args.checkpoint or len(args.ensemble_checkpoint) < 2:
+            parser.error("ensemble requires --ensemble-checkpoint for each component")
+        ensemble_checkpoints = {}
+        for value in args.ensemble_checkpoint:
+            if "=" not in value:
+                parser.error("--ensemble-checkpoint must use MODEL=CHECKPOINT")
+            name, path = value.split("=", 1)
+            if name not in SUPPORTED_SEGMENTATION_MODELS or not path or name in ensemble_checkpoints:
+                parser.error("ensemble component models must be registered, unique, and have checkpoints")
+            ensemble_checkpoints[name] = path
+    else:
+        if args.ensemble_checkpoint:
+            parser.error("--ensemble-checkpoint is only valid with --model ensemble")
+        ensemble_checkpoints = None
 
     video_name = args.video_name
     input_video = args.input
     total_started_at = time.perf_counter()
     provenance = build_provenance(
         model=args.model,
-        checkpoint=args.checkpoint,
+        checkpoint=args.checkpoint or "checkpoints/best_model.pt",
         input_video=input_video,
         window_size=args.window_size,
         threshold=args.threshold,
+        ensemble_checkpoints=ensemble_checkpoints,
     )
+    model_command_args = ["--model", args.model]
+    if ensemble_checkpoints:
+        for name, path in ensemble_checkpoints.items():
+            model_command_args.extend(["--ensemble-checkpoint", f"{name}={path}"])
+    else:
+        model_command_args.extend(["--checkpoint", args.checkpoint or "checkpoints/best_model.pt"])
 
     structured_output_root = None
     if args.output_root:
@@ -491,8 +531,7 @@ def main() -> None:
             sys.executable,
             "scripts/run_video_segmentation.py",
             "--input", input_video,
-            "--model", args.model,
-            "--checkpoint", args.checkpoint,
+            *model_command_args,
             "--output-overlay", baseline_overlay,
             "--output-mask", baseline_mask,
             "--output-prob", baseline_prob,
@@ -513,8 +552,7 @@ def main() -> None:
             "scripts/run_marsp_pipeline.py",
             "--video-name", video_name,
             "--input", input_video,
-            "--model", args.model,
-            "--checkpoint", args.checkpoint,
+            *model_command_args,
             "--window-size", str(args.window_size),
             "--threshold", str(args.threshold),
         ]
@@ -565,7 +603,7 @@ def main() -> None:
         "video_name": video_name,
         "input_video": input_video,
         "segmentation_model": args.model,
-        "checkpoint": args.checkpoint,
+        "checkpoint": args.checkpoint if args.model != "ensemble" else None,
         "provenance": provenance,
         "execution": {
             "baseline": baseline_execution,

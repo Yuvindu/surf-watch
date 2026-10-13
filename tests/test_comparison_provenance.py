@@ -73,6 +73,29 @@ class ComparisonProvenanceTests(unittest.TestCase):
             changed = {**provenance, "segmentation_model": "segformer"}
             self.assertFalse(reusable_run_matches(metrics_path, changed))
 
+    def test_ensemble_provenance_tracks_both_checkpoints_and_equal_weights(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            video = root / "video.mp4"
+            segformer = root / "segformer.pt"
+            unet = root / "unet.pt"
+            video.write_bytes(b"video")
+            segformer.write_bytes(b"segformer")
+            unet.write_bytes(b"unet")
+            provenance = build_provenance(
+                model="ensemble", checkpoint="", input_video=str(video),
+                window_size=5, threshold=0.5,
+                ensemble_checkpoints={"segformer": str(segformer), "unet-resnet34": str(unet)},
+            )
+            metrics_path = root / "metrics.json"
+            metrics_path.write_text(json.dumps({"provenance": provenance}), encoding="utf-8")
+            self.assertTrue(reusable_run_matches(metrics_path, provenance))
+            self.assertEqual(provenance["ensemble_weights"], {"segformer": 0.5, "unet-resnet34": 0.5})
+            self.assertFalse(reusable_run_matches(metrics_path, {
+                **provenance,
+                "component_checkpoints": {**provenance["component_checkpoints"], "segformer": {"sha256": "changed"}},
+            }))
+
     def test_legacy_metrics_are_not_reused(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             metrics_path = Path(directory) / "metrics.json"

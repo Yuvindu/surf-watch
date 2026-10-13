@@ -1,4 +1,4 @@
-import { useContext } from 'react';
+import { useContext, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
@@ -20,6 +20,8 @@ import { AnalysisContext } from '../context/AnalysisContext';
 import ConfidenceGauge from '../components/ConfidenceGauge';
 import HeatmapOverlay from '../components/HeatmapOverlay';
 import VideoPlayer from '../components/VideoPlayer';
+import MultiModelResults from '../components/MultiModelResults';
+import ProvenanceDetails from '../components/ProvenanceDetails';
 import { formatDuration, formatDate } from '../utils/helpers';
 
 export default function ResultsPage() {
@@ -27,6 +29,10 @@ export default function ResultsPage() {
   const navigate = useNavigate();
   const { history } = useContext(AnalysisContext);
   const analysisCase = history.find(c => c.id === id);
+
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [id]);
 
   if (!analysisCase) {
     return (
@@ -37,11 +43,23 @@ export default function ResultsPage() {
     );
   }
 
+  if (analysisCase.status === 'processing') {
+    return (
+      <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', py: 12, px: 2 }}>
+        <Typography variant="h6" mb={2}>Analysis in progress</Typography>
+        <Button onClick={() => navigate('/analyse')} startIcon={<ArrowBackIcon />}>View progress</Button>
+      </Box>
+    );
+  }
+
+  if (analysisCase.mode === 'multi' || analysisCase.modelResults) {
+    return <MultiModelResults analysisCase={analysisCase} />;
+  }
+
   const {
     upload,
     prediction,
     overlayUrl,
-    confidenceScore,
     summaryLabel,
     caseName,
     comparisonVideoUrl,
@@ -51,10 +69,12 @@ export default function ResultsPage() {
     windowSize,
     threshold,
     model,
+    provenance,
+    timingSeconds,
+    metricsUrl,
   } = analysisCase;
 
-  // Use backend-provided confidence if available, otherwise fall back to mock prediction
-  const displayConfidence = confidenceScore ?? prediction?.averageConfidence ?? 0;
+  const displayConfidence = prediction?.averageConfidence ?? 0;
   const displayName = caseName ?? upload.file.name;
 
   // Backend pre-renders overlay; only compute frame stats when using local mock data
@@ -166,10 +186,14 @@ export default function ResultsPage() {
           {/* Stats panel */}
           <Grid item xs={12} md={5}>
             <Paper sx={{ p: { xs: 2.5, sm: 3 }, bgcolor: 'background.paper' }}>
-              <Box sx={{ display: 'flex', justifyContent: 'center', mb: 3 }}>
-                <ConfidenceGauge value={displayConfidence} size={110} />
-              </Box>
-              <Divider sx={{ mb: 2 }} />
+              {prediction && (
+                <>
+                  <Box sx={{ display: 'flex', justifyContent: 'center', mb: 3 }}>
+                    <ConfidenceGauge value={displayConfidence} size={110} />
+                  </Box>
+                  <Divider sx={{ mb: 2 }} />
+                </>
+              )}
 
               {/* summaryLabel from backend */}
               {summaryLabel && (
@@ -230,6 +254,14 @@ export default function ResultsPage() {
                 </Box>
               ))}
 
+              {timingSeconds?.baseline !== undefined && timingSeconds?.marsp !== undefined && (
+                <Box sx={{ mt: 2 }}>
+                  <Divider sx={{ mb: 2 }} />
+                  <Typography variant="caption" color="text.secondary" display="block">Workflow runtime</Typography>
+                  <Typography variant="body2">Baseline {timingSeconds.baseline.toFixed(1)} s · MARSP {timingSeconds.marsp.toFixed(1)} s</Typography>
+                </Box>
+              )}
+
               {prediction && (
                 <>
                   <Divider sx={{ my: 2 }} />
@@ -281,6 +313,7 @@ export default function ResultsPage() {
             </Table>
           </Paper>
         )}
+        <ProvenanceDetails provenance={provenance} metricsUrl={metricsUrl} />
       </Box>
     </Box>
   );
