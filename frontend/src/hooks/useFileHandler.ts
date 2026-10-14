@@ -8,7 +8,8 @@ const ACCEPTED_TYPES: Record<string, FileType> = {
   'video/mp4': 'video',
   'video/webm': 'video',
 };
-const MAX_SIZE_BYTES = 50 * 1024 * 1024; // 50MB
+export const MAX_IMAGE_SIZE_MB = 50;
+export const MAX_VIDEO_SIZE_MB = 60;
 
 export function useFileHandler() {
   const [uploadFile, setUploadFile] = useState<UploadFile | null>(null);
@@ -21,8 +22,9 @@ export function useFileHandler() {
       setError('Unsupported file type. Please upload .jpg, .png, .mp4, or .webm');
       return;
     }
-    if (file.size > MAX_SIZE_BYTES) {
-      setError('File exceeds the 50MB size limit.');
+    const maxSizeMb = fileType === 'video' ? MAX_VIDEO_SIZE_MB : MAX_IMAGE_SIZE_MB;
+    if (file.size > maxSizeMb * 1024 * 1024) {
+      setError(`File exceeds the ${maxSizeMb} MB size limit.`);
       return;
     }
     const previewUrl = URL.createObjectURL(file);

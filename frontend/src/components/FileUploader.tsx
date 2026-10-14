@@ -2,6 +2,7 @@ import React, { useCallback, useState } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
+import { MAX_IMAGE_SIZE_MB, MAX_VIDEO_SIZE_MB } from '../hooks/useFileHandler';
 
 const RIPPLE_STYLE = `
   @keyframes ripple-out {
@@ -96,7 +97,7 @@ export default function FileUploader({ onFile, disabled }: FileUploaderProps) {
           Drag & drop or click to upload
         </Typography>
         <Typography variant="caption" color="text.secondary">
-          .jpg, .png, .mp4, .webm — max 50 MB
+          .jpg, .png — max {MAX_IMAGE_SIZE_MB} MB · .mp4, .webm — max {MAX_VIDEO_SIZE_MB} MB
         </Typography>
       </Box>
     </>

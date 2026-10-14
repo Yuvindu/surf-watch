@@ -304,4 +304,4 @@ That is expected. The backend runs baseline inference, MARSP processing, overlay
 
 ### Uploaded file too large
 
-The frontend currently limits uploads to 50 MB in `frontend/src/hooks/useFileHandler.ts`. The backend accepts up to 1 GB, but the browser UI will block files above the frontend limit first.
+The frontend limits images to 50 MB and videos to 60 MB in `frontend/src/hooks/useFileHandler.ts`. The backend accepts up to 1 GB, but the browser UI blocks files above the applicable frontend limit first.
